@@ -18,7 +18,7 @@ Vite 側で `/api/*` を `localhost:4000` に proxy しています。
 ## 触り方
 
 1. `http://localhost:5173/client` を開く
-2. 「認可開始（/authorizeへ）」を押す
+2. 「認可開始（/authorize へ）」を押す
 3. login → consent → redirect で `/callback` に戻る
 4. `/api/token` に code_verifier を渡して access_token を取得
 
@@ -39,4 +39,3 @@ Vite 側で `/api/*` を `localhost:4000` に proxy しています。
 - `state` を生成して保存しているか（`sessionStorage.setItem("demo_state", ...)`）
 
 ---
-このサンプルは「分かりやすさ優先」なので、本番実装のセキュリティ要件をすべて満たすわけではありません。
