@@ -3,6 +3,8 @@
 OAuth2 Authorization Code + PKCE っぽいフローを、React Router の画面遷移で擬似再現する教材です。
 静的解析（フロー抽出 / ルールチェック / テスト生成）の **対象プログラム** として使えるよう、意図的に分かりやすい関数名・構造にしています。
 
+sample については ChatGPT 作成
+
 ## 起動
 
 ```bash
