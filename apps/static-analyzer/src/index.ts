@@ -37,6 +37,7 @@ type Event =
   | { kind: "throw"; loc: Location; expr: string; exprType?: TypeInfo }
   | { kind: "await"; loc: Location; expr: string; exprType?: TypeInfo }
   | {
+      // 関数/メソッド/コンストラクタ呼び出し
       kind: "call";
       loc: Location;
       callee: string;
@@ -45,6 +46,7 @@ type Event =
       args: { text: string; type?: TypeInfo }[];
     }
   | {
+      // クラス/コンストラクタ呼び出し
       kind: "new";
       loc: Location;
       classExpr: string;

@@ -8,6 +8,7 @@ type TokenResponse = {
   scope: string;
 };
 
+// 検証：state が期待通りであることを保証する関数
 function verifyState(received: string, expected: string) {
   if (received !== expected) throw new Error("state mismatch");
 }
@@ -68,15 +69,15 @@ export function Callback() {
       <h2 style={{ margin: 0 }}>/callback</h2>
 
       <div style={{ display: "grid", gap: 6 }}>
-        <div>code: <code>{code || "(none)"}</code></div>
-        <div>state: <code>{state || "(none)"}</code></div>
+        <div>
+          code: <code>{code || "(none)"}</code>
+        </div>
+        <div>
+          state: <code>{state || "(none)"}</code>
+        </div>
       </div>
 
-      {status === "ok" && (
-        <div style={{ padding: 12, background: "#eefcf0", borderRadius: 8 }}>
-          ✅ トークン交換に成功しました
-        </div>
-      )}
+      {status === "ok" && <div style={{ padding: 12, background: "#eefcf0", borderRadius: 8 }}>✅ トークン交換に成功しました</div>}
       {status === "error" && (
         <div style={{ padding: 12, background: "#ffecec", borderRadius: 8 }}>
           ❌ 失敗: <span style={{ color: "crimson" }}>{error}</span>
@@ -89,8 +90,8 @@ export function Callback() {
       </div>
 
       <p style={{ opacity: 0.7, fontSize: 12 }}>
-        NOTE: ここは「state を検証してから token endpoint を呼ぶ」という安全な順序を持ちます。
-        静的解析でこの依存を検出できるよう、関数名 <code>verifyState</code> を明示しています。
+        NOTE: ここは「state を検証してから token endpoint を呼ぶ」という安全な順序を持ちます。 静的解析でこの依存を検出できるよう、関数名{" "}
+        <code>verifyState</code> を明示しています。
       </p>
     </div>
   );
