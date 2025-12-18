@@ -1,0 +1,20 @@
+{
+  "name": "typeauth-split-oauth-min",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.0.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n auth,resource,client -c auto "pnpm -C apps/auth-server dev" "pnpm -C apps/resource-server dev" "pnpm -C apps/client dev"",
+    "build": "pnpm -C packages/shared build && pnpm -C apps/auth-server build && pnpm -C apps/resource-server build && pnpm -C apps/client build",
+    "lint": "echo \"(optional)\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "typescript": "^5.6.3"
+  }
+}
