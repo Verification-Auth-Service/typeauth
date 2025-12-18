@@ -15,7 +15,6 @@ const PORT = Number(process.env.PORT ?? 8787);
 /**
  * ===== Client Registry (最小) =====
  * 本来はDB/管理画面で client_id, redirect_uri, secret, allowed scopes を管理する。
- * DBまで作ってしまうと面倒なので、いったんべた書き
  */
 type Client = {
   clientId: string;
