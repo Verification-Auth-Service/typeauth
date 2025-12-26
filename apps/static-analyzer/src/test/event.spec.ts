@@ -1,5 +1,3 @@
-import ts from "typescript";
-
 import { extractEvents } from "../analyze/event";
 import { PEvent } from "../types/event";
 import { describe, it, expect } from "vitest";
@@ -18,8 +16,7 @@ describe("extractEventsのテスト", () => {
     `;
     const sourceFile = createSourceFile(code);
     const checker = createChecker(sourceFile);
-    const out: PEvent[] = [];
-    extractEvents(checker, sourceFile, sourceFile, out);
+    const out: PEvent[] = extractEvents(checker, sourceFile, sourceFile, []);
 
     const kinds = out.map((e) => e.kind);
     expect(kinds).toEqual(["if", "blockEnter", "call", "blockExit", "blockEnter", "call", "blockExit"]);
