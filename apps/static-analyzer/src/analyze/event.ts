@@ -9,7 +9,7 @@ import { symbolInfo } from "../helper/symbol";
  * - ブロック構造を blockEnter/blockExit で積む
  * - if/switch/loop/try/catch/finally/return/throw/await/call/new を events として保存
  */
-export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: ts.Node, out: PEvent[], blockLabel?: string) {
+export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: ts.Node, out: PEvent[], blockLabel?: string): PEvent[] {
   const pushEnter = (label: string, n: ts.Node) => out.push({ kind: "blockEnter", loc: locOf(sf, n), label });
   const pushExit = (label: string, n: ts.Node) => out.push({ kind: "blockExit", loc: locOf(sf, n), label });
 
@@ -199,4 +199,6 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
 
   // ブロックラベルがあれば exit を追加
   if (blockLabel) pushExit(blockLabel, node);
+
+  return out;
 }
