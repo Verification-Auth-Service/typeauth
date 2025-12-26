@@ -1,4 +1,4 @@
-import { Location, TypeInfo, SymbolInfo } from "./tree.js";
+import { Location, TypeInfo, SymbolInfo } from "./tree";
 
 export type PEvent =
   | { kind: "if"; loc: Location; test: string; testType?: TypeInfo }

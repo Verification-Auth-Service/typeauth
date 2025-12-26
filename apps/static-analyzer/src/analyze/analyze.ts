@@ -11,11 +11,7 @@ import { errorMessageO } from "../helper/errorMessage";
 import { signatureOf } from "../helper/signature";
 import { readTsConfigNearest } from "../readTsConfig";
 import { PEvent } from "../types/event";
-
-// .ts/.tsx/.js/.jsx/.mjs/.cjs っぽいか
-function isTsLike(file: string): boolean {
-  return [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"].includes(path.extname(file).toLowerCase());
-}
+import { isTsLike } from "../helper/regular";
 
 /**
  * エントリファイルから始めて静的解析を行い、AnalysisReport を生成する
@@ -28,8 +24,6 @@ export function analyze(entryFile: string): AnalysisReport {
 
   const cfg = readTsConfigNearest(entryAbs);
 
-  // Program: tsconfig があればその fileNames 全体を含める方が型解決が強い
-  // ただし、まずは entry を確実に含める
   const rootNames = cfg.fileNames?.includes(entryAbs) ? cfg.fileNames : [entryAbs, ...(cfg.fileNames ?? [])];
 
   const host = ts.createCompilerHost(cfg.options, true);
@@ -61,7 +55,7 @@ export function analyze(entryFile: string): AnalysisReport {
         const loc = locOf(sf, n);
 
         const events: PEvent[] = [];
-        // 関数本体のBlock or 式本体に対して抽出
+
         if (ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n) || ts.isConstructorDeclaration(n) || ts.isFunctionExpression(n) || ts.isArrowFunction(n)) {
           const body = n.body;
           if (body) extractEvents(checker, sf, body, events, "body");

@@ -2,6 +2,7 @@ import ts from "typescript";
 import path from "node:path";
 import { Location } from "../types/tree";
 
+// ノードの位置情報を取得
 export function locOf(sf: ts.SourceFile, node: ts.Node): Location {
   const start = sf.getLineAndCharacterOfPosition(node.getStart(sf, false));
   const end = sf.getLineAndCharacterOfPosition(node.getEnd());

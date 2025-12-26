@@ -1,5 +1,5 @@
-import { Location } from "./tree.js";
-import { PEvent } from "./event.js";
+import { Location } from "./tree";
+import { PEvent } from "./event";
 
 export type FunctionReport = {
   id: string;

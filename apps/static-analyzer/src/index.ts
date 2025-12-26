@@ -1,9 +1,4 @@
-#!/usr/bin/env node
-import ts from "typescript";
-import path from "node:path";
-import fs from "node:fs";
 import { analyze } from "./analyze/analyze";
-import { errorMessageO } from "./helper/errorMessage.js";
 
 /**
  * 目的:

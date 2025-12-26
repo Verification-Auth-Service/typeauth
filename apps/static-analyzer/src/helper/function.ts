@@ -1,7 +1,8 @@
 import ts from "typescript";
 
-import { FunctionReport } from "../types/report.js";
+import { FunctionReport } from "../types/report";
 
+// 関数の種類を取得
 export function functionKind(node: ts.Node): FunctionReport["kind"] | undefined {
   if (ts.isFunctionDeclaration(node)) return "function";
   if (ts.isMethodDeclaration(node)) return "method";
@@ -11,6 +12,7 @@ export function functionKind(node: ts.Node): FunctionReport["kind"] | undefined 
   return undefined;
 }
 
+// 関数の名前を取得
 export function functionName(node: ts.Node): string {
   if (ts.isFunctionDeclaration(node)) return node.name?.text ?? "<anonymous function>";
   if (ts.isMethodDeclaration(node)) {

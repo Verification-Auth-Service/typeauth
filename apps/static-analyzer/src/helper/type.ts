@@ -1,5 +1,5 @@
 import ts from "typescript";
-import { TypeInfo } from "../types/tree.js";
+import { TypeInfo } from "../types/tree";
 
 export function typeInfo(checker: ts.TypeChecker, node: ts.Node): TypeInfo | undefined {
   try {
