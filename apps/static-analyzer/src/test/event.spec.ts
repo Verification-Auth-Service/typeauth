@@ -1,10 +1,7 @@
-// apps/static-analyzer/src/analyze/event.extractEventsのテスト
-// 各種文に対して正しくイベントが抽出されることを確認
-
 import ts from "typescript";
 
-import { extractEvents } from "../src/analyze/event";
-import { PEvent } from "../src/types/event";
+import { extractEvents } from "../analyze/event";
+import { PEvent } from "../types/event";
 import { describe, it, expect } from "vitest";
 
 describe("extractEventsのテスト", () => {
