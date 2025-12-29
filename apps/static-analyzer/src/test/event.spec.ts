@@ -21,4 +21,20 @@ describe("extractEventsのテスト", () => {
     const kinds = out.map((e) => e.kind);
     expect(kinds).toEqual(["if", "blockEnter", "call", "blockExit", "blockEnter", "call", "blockExit"]);
   });
+
+  it("for文のイベント抽出", () => {
+    const code = `
+      function test() {
+        for (let i = 0; i < 5; i++) {
+          console.log(i);
+        }
+      }
+    `;
+    const sourceFile = createSourceFile(code);
+    const checker = createChecker(sourceFile);
+    const out: PEvent[] = extractEvents(checker, sourceFile, sourceFile, []);
+
+    const kinds = out.map((e) => e.kind);
+    expect(kinds).toEqual(["loop", "blockEnter", "call", "blockExit"]);
+  });
 });
