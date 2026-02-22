@@ -304,6 +304,14 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
       return;
     }
 
+    // `window.location.href = "/login"` のような代入ベースのリダイレクト
+    if (ts.isBinaryExpression(n)) {
+      const redirect = redirectAssignInfo(n);
+      if (redirect) pushRedirect(n, "assign", redirect.api, redirect.targetNode);
+      ts.forEachChild(n, visit);
+      return;
+    }
+
     // クラス/コンストラクタ呼び出し
     if (ts.isNewExpression(n)) {
       const classExpr = n.expression.getText(sf);
