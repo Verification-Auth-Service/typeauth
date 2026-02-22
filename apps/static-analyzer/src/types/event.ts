@@ -84,6 +84,39 @@ export type PEvent = (
       exprType?: TypeInfo;
     }
   | {
+      // Auth アプリで頻出のリダイレクト操作
+      // 例:
+      // - `return redirect("/login")`
+      // - `navigate("/callback")`
+      // - `router.push("/home")`
+      // - `window.location.href = "/login"`
+      kind: "redirect";
+      // どの形でリダイレクトしたか
+      via: "call" | "assign";
+      // API / 左辺の識別子 (例: `redirect`, `router.push`, `window.location.href`)
+      api: string;
+      // 遷移先っぽい式。特定できた場合のみ
+      target?: string;
+      targetType?: TypeInfo;
+      // `redirect(url, options)` の第2引数など、付随オプションの元構文
+      options?: string;
+      // `headers: { ... }` があればキー一覧を抽出 (例: ["Set-Cookie"])
+      headerKeys?: string[];
+    }
+  | {
+      // `url.searchParams.set("k", v)` のような URL クエリ構築
+      // OAuth/OIDC の authorize URL 組み立てで頻出。
+      kind: "urlParamSet";
+      // ベース URL オブジェクトの式 (例: `authorizeUrl`)
+      urlExpr: string;
+      // 第1引数 (キー)
+      key: string;
+      keyType?: TypeInfo;
+      // 第2引数 (値)
+      value?: string;
+      valueType?: TypeInfo;
+    }
+  | {
       // 関数/メソッド/コンストラクタ呼び出し
       kind: "call";
       // 呼び出し先のソース文字列 (例: `console.log`, `service.run`)
