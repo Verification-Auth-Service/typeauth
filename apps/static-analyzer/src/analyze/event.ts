@@ -10,6 +10,8 @@ import { symbolInfo } from "../helper/symbol";
  * - if/switch/loop/try/catch/finally/return/throw/await/call/new を events として保存
  */
 export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: ts.Node, out: PEvent[], blockLabel?: string): PEvent[] {
+  // blockEnter/blockExit を必ず対で積むため、push 処理を小関数化しておく。
+  // こうしておくとイベント構造の変更時に loc/label の作り方を一箇所で直せる。
   const pushEnter = (label: string, n: ts.Node) => out.push({ kind: "blockEnter", loc: locOf(sf, n), label });
   const pushExit = (label: string, n: ts.Node) => out.push({ kind: "blockExit", loc: locOf(sf, n), label });
 
@@ -24,6 +26,8 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
         test: n.expression.getText(sf),
         testType: typeInfo(checker, n.expression),
       });
+      // then/else は構造イベントとして明示的に囲む。
+      // 後段で「どの call が then 側にあるか」を追いやすくするため。
       pushEnter("then", n.thenStatement);
       ts.forEachChild(n.thenStatement, visit);
       pushExit("then", n.thenStatement);
@@ -52,6 +56,8 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
 
     // loop文
     if (ts.isForStatement(n)) {
+      // `header` は厳密構文解析ではなく可読性重視の文字列。
+      // `{` 以降を落としておくとレポートが長くなり過ぎにくい。
       out.push({ kind: "loop", loc: locOf(sf, n), loopKind: "for", header: n.getText(sf).split("{")[0] ?? "for" });
       pushEnter("for", n.statement);
       ts.forEachChild(n.statement, visit);
@@ -103,6 +109,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
       pushExit("try", n.tryBlock);
 
       if (n.catchClause) {
+        // catch 変数 (`catch (e)`) は存在しない構文もあるため optional 扱い。
         const p = n.catchClause.variableDeclaration?.name.getText(sf);
         const pNode = n.catchClause.variableDeclaration?.name;
         out.push({
@@ -152,8 +159,10 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
         kind: "await",
         loc: locOf(sf, n),
         expr: n.expression.getText(sf),
+        // await 後の値型を見たいので、式本体ではなく await ノード全体の型を引く。
         exprType: typeInfo(checker, n),
       });
+      // `await foo(bar())` のような式内 call/new も拾うため、子ノードは継続して走査する。
       ts.forEachChild(n, visit);
       return;
     }
@@ -166,6 +175,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
         loc: locOf(sf, n),
         callee,
         calleeType: typeInfo(checker, n.expression),
+        // symbol は解決できないケースもある (dynamic call / any / error state) ので optional。
         resolved: symbolInfo(checker, n.expression),
         args: n.arguments.map((a) => ({ text: a.getText(sf), type: typeInfo(checker, a) })),
       });
@@ -192,6 +202,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
   };
 
   // ブロックラベルがあれば enter/exit を追加
+  // 例: analyze.ts から関数 body を渡すとき `"body"` を指定し、イベント列の先頭/末尾を明示する。
   if (blockLabel) pushEnter(blockLabel, node);
 
   // ノードを訪問
