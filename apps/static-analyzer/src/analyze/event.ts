@@ -10,10 +10,12 @@ import { symbolInfo } from "../helper/symbol";
  * - if/switch/loop/try/catch/finally/return/throw/await/call/new を events として保存
  */
 export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: ts.Node, out: PEvent[], blockLabel?: string): PEvent[] {
+  const eventBase = (n: ts.Node) => ({ loc: locOf(sf, n), syntax: n.getText(sf) });
+
   // blockEnter/blockExit を必ず対で積むため、push 処理を小関数化しておく。
   // こうしておくとイベント構造の変更時に loc/label の作り方を一箇所で直せる。
-  const pushEnter = (label: string, n: ts.Node) => out.push({ kind: "blockEnter", loc: locOf(sf, n), label });
-  const pushExit = (label: string, n: ts.Node) => out.push({ kind: "blockExit", loc: locOf(sf, n), label });
+  const pushEnter = (label: string, n: ts.Node) => out.push({ kind: "blockEnter", ...eventBase(n), label });
+  const pushExit = (label: string, n: ts.Node) => out.push({ kind: "blockExit", ...eventBase(n), label });
 
   const visit = (n: ts.Node) => {
     // 各種文に対応
@@ -22,7 +24,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
     if (ts.isIfStatement(n)) {
       out.push({
         kind: "if",
-        loc: locOf(sf, n),
+        ...eventBase(n),
         test: n.expression.getText(sf),
         testType: typeInfo(checker, n.expression),
       });
@@ -44,7 +46,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
     if (ts.isSwitchStatement(n)) {
       out.push({
         kind: "switch",
-        loc: locOf(sf, n),
+        ...eventBase(n),
         expr: n.expression.getText(sf),
         exprType: typeInfo(checker, n.expression),
       });
@@ -58,7 +60,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
     if (ts.isForStatement(n)) {
       // `header` は厳密構文解析ではなく可読性重視の文字列。
       // `{` 以降を落としておくとレポートが長くなり過ぎにくい。
-      out.push({ kind: "loop", loc: locOf(sf, n), loopKind: "for", header: n.getText(sf).split("{")[0] ?? "for" });
+      out.push({ kind: "loop", ...eventBase(n), loopKind: "for", header: n.getText(sf).split("{")[0] ?? "for" });
       pushEnter("for", n.statement);
       ts.forEachChild(n.statement, visit);
       pushExit("for", n.statement);
@@ -67,7 +69,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
 
     // for-in, for-of, while, do-while
     if (ts.isForInStatement(n)) {
-      out.push({ kind: "loop", loc: locOf(sf, n), loopKind: "forIn", header: n.getText(sf).split("{")[0] ?? "for-in" });
+      out.push({ kind: "loop", ...eventBase(n), loopKind: "forIn", header: n.getText(sf).split("{")[0] ?? "for-in" });
       pushEnter("forIn", n.statement);
       ts.forEachChild(n.statement, visit);
       pushExit("forIn", n.statement);
@@ -76,7 +78,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
 
     // for-of
     if (ts.isForOfStatement(n)) {
-      out.push({ kind: "loop", loc: locOf(sf, n), loopKind: "forOf", header: n.getText(sf).split("{")[0] ?? "for-of" });
+      out.push({ kind: "loop", ...eventBase(n), loopKind: "forOf", header: n.getText(sf).split("{")[0] ?? "for-of" });
       pushEnter("forOf", n.statement);
       ts.forEachChild(n.statement, visit);
       pushExit("forOf", n.statement);
@@ -85,7 +87,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
 
     // while
     if (ts.isWhileStatement(n)) {
-      out.push({ kind: "loop", loc: locOf(sf, n), loopKind: "while", header: n.expression.getText(sf) });
+      out.push({ kind: "loop", ...eventBase(n), loopKind: "while", header: n.expression.getText(sf) });
       pushEnter("while", n.statement);
       ts.forEachChild(n.statement, visit);
       pushExit("while", n.statement);
@@ -94,7 +96,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
 
     // do-while
     if (ts.isDoStatement(n)) {
-      out.push({ kind: "loop", loc: locOf(sf, n), loopKind: "do", header: n.expression.getText(sf) });
+      out.push({ kind: "loop", ...eventBase(n), loopKind: "do", header: n.expression.getText(sf) });
       pushEnter("do", n.statement);
       ts.forEachChild(n.statement, visit);
       pushExit("do", n.statement);
@@ -103,7 +105,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
 
     // try-catch-finally
     if (ts.isTryStatement(n)) {
-      out.push({ kind: "try", loc: locOf(sf, n) });
+      out.push({ kind: "try", ...eventBase(n) });
       pushEnter("try", n.tryBlock);
       ts.forEachChild(n.tryBlock, visit);
       pushExit("try", n.tryBlock);
@@ -114,7 +116,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
         const pNode = n.catchClause.variableDeclaration?.name;
         out.push({
           kind: "catch",
-          loc: locOf(sf, n.catchClause),
+          ...eventBase(n.catchClause),
           param: p,
           paramType: pNode ? typeInfo(checker, pNode) : undefined,
         });
@@ -123,7 +125,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
         pushExit("catch", n.catchClause.block);
       }
       if (n.finallyBlock) {
-        out.push({ kind: "finally", loc: locOf(sf, n.finallyBlock) });
+        out.push({ kind: "finally", ...eventBase(n.finallyBlock) });
         pushEnter("finally", n.finallyBlock);
         ts.forEachChild(n.finallyBlock, visit);
         pushExit("finally", n.finallyBlock);
@@ -135,7 +137,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
     if (ts.isReturnStatement(n)) {
       out.push({
         kind: "return",
-        loc: locOf(sf, n),
+        ...eventBase(n),
         expr: n.expression?.getText(sf),
         exprType: n.expression ? typeInfo(checker, n.expression) : undefined,
       });
@@ -146,7 +148,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
     if (ts.isThrowStatement(n)) {
       out.push({
         kind: "throw",
-        loc: locOf(sf, n),
+        ...eventBase(n),
         expr: n.expression.getText(sf),
         exprType: typeInfo(checker, n.expression),
       });
@@ -157,7 +159,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
     if (ts.isAwaitExpression(n)) {
       out.push({
         kind: "await",
-        loc: locOf(sf, n),
+        ...eventBase(n),
         expr: n.expression.getText(sf),
         // await 後の値型を見たいので、式本体ではなく await ノード全体の型を引く。
         exprType: typeInfo(checker, n),
@@ -172,7 +174,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
       const callee = n.expression.getText(sf);
       out.push({
         kind: "call",
-        loc: locOf(sf, n),
+        ...eventBase(n),
         callee,
         calleeType: typeInfo(checker, n.expression),
         // symbol は解決できないケースもある (dynamic call / any / error state) ので optional。
@@ -188,7 +190,7 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
       const classExpr = n.expression.getText(sf);
       out.push({
         kind: "new",
-        loc: locOf(sf, n),
+        ...eventBase(n),
         classExpr,
         classType: typeInfo(checker, n.expression),
         resolved: symbolInfo(checker, n.expression),

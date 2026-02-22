@@ -1,5 +1,11 @@
 import { Location, TypeInfo, SymbolInfo } from "./tree";
 
+type PEventCommon = {
+  loc: Location;
+  // 該当イベントに対応する元の構文文字列 (`node.getText()` ベース)
+  syntax?: string;
+};
+
 /**
  * 静的解析で抽出する「プログラムイベント」の列。
  *
@@ -11,11 +17,10 @@ import { Location, TypeInfo, SymbolInfo } from "./tree";
  * - これは AST の完全な再表現ではなく、分析用に要約したイベントモデル
  * - `*Type` / `resolved` は型解決できたときだけ入る (optional)
  */
-export type PEvent =
+export type PEvent = (
   | {
       // `if (...) { ... }`
       kind: "if";
-      loc: Location;
       // 条件式のソース文字列 (例: `x > 0`)
       test: string;
       // 条件式の型情報 (取得できる場合)
@@ -24,7 +29,6 @@ export type PEvent =
   | {
       // `switch (expr) { ... }`
       kind: "switch";
-      loc: Location;
       // switch の判定対象式 (例: `status`)
       expr: string;
       exprType?: TypeInfo;
@@ -32,7 +36,6 @@ export type PEvent =
   | {
       // `for / for-in / for-of / while / do-while`
       kind: "loop";
-      loc: Location;
       // ループの種類
       loopKind: "for" | "forIn" | "forOf" | "while" | "do";
       /**
@@ -52,33 +55,29 @@ export type PEvent =
        */
       header: string;
     }
-  | { kind: "try"; loc: Location }
+  | { kind: "try" }
   | {
       // `catch (e) { ... }`
       kind: "catch";
-      loc: Location;
       // catch 変数名。`catch {}` の場合は undefined
       param?: string;
       paramType?: TypeInfo;
     }
-  | { kind: "finally"; loc: Location }
+  | { kind: "finally" }
   | {
       kind: "return";
-      loc: Location;
       // `return;` のような式なし return のときは undefined
       expr?: string;
       exprType?: TypeInfo;
     }
   | {
       kind: "throw";
-      loc: Location;
       // 例: `new Error("x")`
       expr: string;
       exprType?: TypeInfo;
     }
   | {
       kind: "await";
-      loc: Location;
       // await している式本体 (例: `fetch(url)`)
       expr: string;
       // await 後の型 (実装側では await 式ノード全体の型を入れる)
@@ -87,7 +86,6 @@ export type PEvent =
   | {
       // 関数/メソッド/コンストラクタ呼び出し
       kind: "call";
-      loc: Location;
       // 呼び出し先のソース文字列 (例: `console.log`, `service.run`)
       callee: string;
       calleeType?: TypeInfo;
@@ -98,7 +96,6 @@ export type PEvent =
   | {
       // クラス/コンストラクタ呼び出し
       kind: "new";
-      loc: Location;
       // `new` の直後にある式 (例: `Error`, `MyClass`)
       classExpr: string;
       classType?: TypeInfo;
@@ -109,12 +106,12 @@ export type PEvent =
       // 構造イベント: ブロック開始
       // 例: `then`, `else`, `for`, `try`, `body`
       kind: "blockEnter";
-      loc: Location;
       label: string;
     }
   | {
       // 構造イベント: ブロック終了
       kind: "blockExit";
-      loc: Location;
       label: string;
-    };
+    }
+) &
+  PEventCommon;
