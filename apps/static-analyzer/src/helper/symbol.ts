@@ -2,6 +2,26 @@ import { locOf } from "./locOf";
 import { SymbolInfo } from "../types/tree";
 import ts from "typescript";
 
+function isSingleBit(v: number): boolean {
+  return v > 0 && (v & (v - 1)) === 0;
+}
+
+function symbolFlagLabels(flags: ts.SymbolFlags): NonNullable<SymbolInfo["flagsLabels"]> {
+  const pairs: Array<{ name: string; value: number }> = [];
+
+  for (const [k, v] of Object.entries(ts.SymbolFlags)) {
+    if (typeof v !== "number") continue;
+    // 合成フラグは除外し、基本ビットだけを分解対象にする。
+    if (!isSingleBit(v)) continue;
+    if ((flags & v) !== v) continue;
+    pairs.push({ name: k, value: v });
+  }
+
+  // 数値順にしておくと出力の安定性が高く、diff が見やすい。
+  pairs.sort((a, b) => a.value - b.value);
+  return pairs.map((p) => p.name) as NonNullable<SymbolInfo["flagsLabels"]>;
+}
+
 // シンボル情報を取得
 export function symbolInfo(checker: ts.TypeChecker, node: ts.Node): SymbolInfo | undefined {
   // AST の形によって `getSymbolAtLocation` の当たり方が変わるため、
@@ -16,10 +36,13 @@ export function symbolInfo(checker: ts.TypeChecker, node: ts.Node): SymbolInfo |
   if (!sym) return undefined;
 
   const decls = (sym.declarations ?? []).map((d) => locOf(d.getSourceFile(), d));
+  const rawFlags = Number(sym.flags);
+  const labels = symbolFlagLabels(sym.flags);
   return {
     name: checker.symbolToString(sym),
-    // SymbolFlags はビットフラグ。文字列表現が取れない場合に備えて数値も残せるようにする。
-    flags: ts.SymbolFlags[sym.flags] ?? String(sym.flags),
+    // SymbolFlags はビットフラグなので、生値と分解済みラベルを両方持たせる。
+    flagsRaw: rawFlags,
+    flagsLabels: labels.length ? labels : undefined,
     declarations: decls.length ? decls : undefined,
   };
 }
