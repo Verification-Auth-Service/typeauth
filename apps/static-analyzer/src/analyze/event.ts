@@ -234,6 +234,12 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
 
     // return 文
     if (ts.isReturnStatement(n)) {
+      // Auth アプリでは `return redirect("/login")` が非常に多い。
+      // 既存の return イベントに加えて、リダイレクト意図を専用イベントとして残す。
+      if (n.expression && ts.isCallExpression(n.expression)) {
+        const info = redirectCallInfo(n.expression);
+        if (info) pushRedirect(n.expression, "call", info.api, info.targetNode);
+      }
       out.push({
         kind: "return",
         ...eventBase(n),
