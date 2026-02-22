@@ -11,6 +11,105 @@ import { symbolInfo } from "../helper/symbol";
  */
 export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: ts.Node, out: PEvent[], blockLabel?: string): PEvent[] {
   const eventBase = (n: ts.Node) => ({ loc: locOf(sf, n), syntax: n.getText(sf) });
+  const pushRedirect = (n: ts.Node, via: "call" | "assign", api: string, targetNode?: ts.Node) => {
+    let options: string | undefined;
+    let headerKeys: string[] | undefined;
+    if (ts.isCallExpression(n) && n.arguments[1]) {
+      options = n.arguments[1].getText(sf);
+      const opt = n.arguments[1];
+      if (ts.isObjectLiteralExpression(opt)) {
+        const headersProp = opt.properties.find(
+          (p): p is ts.PropertyAssignment =>
+            ts.isPropertyAssignment(p) &&
+            ((ts.isIdentifier(p.name) && p.name.text === "headers") ||
+              (ts.isStringLiteralLike(p.name) && p.name.text === "headers"))
+        );
+        if (headersProp && ts.isObjectLiteralExpression(headersProp.initializer)) {
+          headerKeys = headersProp.initializer.properties
+            .map((p) => {
+              if (!ts.isPropertyAssignment(p) && !ts.isShorthandPropertyAssignment(p)) return undefined;
+              const name = p.name;
+              if (!name) return undefined;
+              if (ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name)) return name.text;
+              return name.getText(sf);
+            })
+            .filter((x): x is string => !!x);
+        }
+      }
+    }
+    out.push({
+      kind: "redirect",
+      ...eventBase(n),
+      via,
+      api,
+      target: targetNode?.getText(sf),
+      targetType: targetNode ? typeInfo(checker, targetNode) : undefined,
+      options,
+      headerKeys: headerKeys?.length ? headerKeys : undefined,
+    });
+  };
+
+  const redirectCallInfo = (
+    n: ts.CallExpression
+  ): { api: string; targetNode?: ts.Expression } | undefined => {
+    const callee = n.expression.getText(sf);
+
+    // React Router / Remix / Next.js / SPA router 系の代表的な redirect API を対象にする。
+    const directNames = new Set(["redirect", "permanentRedirect", "navigate"]);
+    const memberNames = new Set([
+      "router.push",
+      "router.replace",
+      "router.navigate",
+      "history.push",
+      "history.replace",
+      "window.location.assign",
+      "window.location.replace",
+      "location.assign",
+      "location.replace",
+      "document.location.assign",
+      "document.location.replace",
+      "Response.redirect",
+      "NextResponse.redirect",
+    ]);
+
+    if (directNames.has(callee) || memberNames.has(callee) || callee.endsWith(".redirect")) {
+      return { api: callee, targetNode: n.arguments[0] };
+    }
+    return undefined;
+  };
+
+  const redirectAssignInfo = (
+    n: ts.BinaryExpression
+  ): { api: string; targetNode?: ts.Expression } | undefined => {
+    if (n.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return undefined;
+    const left = n.left.getText(sf);
+    const redirectAssignTargets = new Set([
+      "location.href",
+      "window.location.href",
+      "document.location.href",
+      "location",
+      "window.location",
+      "document.location",
+    ]);
+    if (!redirectAssignTargets.has(left)) return undefined;
+    return { api: left, targetNode: n.right };
+  };
+
+  const urlParamSetInfo = (
+    n: ts.CallExpression
+  ): { urlExpr: string; keyArg: ts.Expression; valueArg?: ts.Expression } | undefined => {
+    if (!ts.isPropertyAccessExpression(n.expression)) return undefined;
+    const inner = n.expression.expression;
+    if (!ts.isPropertyAccessExpression(inner)) return undefined;
+    if (inner.name.text !== "searchParams") return undefined;
+    if (n.expression.name.text !== "set") return undefined;
+    if (!n.arguments[0]) return undefined;
+    return {
+      urlExpr: inner.expression.getText(sf),
+      keyArg: n.arguments[0],
+      valueArg: n.arguments[1],
+    };
+  };
 
   // blockEnter/blockExit を必ず対で積むため、push 処理を小関数化しておく。
   // こうしておくとイベント構造の変更時に loc/label の作り方を一箇所で直せる。
