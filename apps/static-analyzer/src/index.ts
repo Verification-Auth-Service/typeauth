@@ -4,6 +4,8 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { analyze } from "./analyze/analyze";
 import type { AnalysisReport } from "./types/report";
+import { deriveFrameworkReports } from "./framework/report";
+import { deriveOauthReport } from "./oauth/report";
 
 /**
  * 目的:
@@ -92,6 +94,11 @@ function writeSingleReport(report: AnalysisReport, outFile: string) {
   console.error(`Saved report to ${outAbs}`);
 }
 
+function writeJson(filePath: string, value: unknown) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, JSON.stringify(value, null, 2) + "\n", "utf8");
+}
+
 async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
   const outDirAbs = path.resolve(outDir);
 
@@ -112,30 +119,48 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
 
   fs.mkdirSync(outDirAbs, { recursive: true });
 
-  // ファイルごとのレポートを、解析対象ファイル群の共通親ディレクトリを基準にミラー配置する。
+  // レイヤー分離:
+  // - flow      : 既存の汎用フローレポート (ファイル/関数/events)
+  // - framework : import/package 傾向からのフレームワーク判定
+  // - oauth     : redirect / URL param set など認可まわりの派生ビュー
+  const flowDir = path.join(outDirAbs, "flow");
+  const frameworkDir = path.join(outDirAbs, "framework");
+  const oauthDir = path.join(outDirAbs, "oauth");
+
+  // ファイルごとのフローレポートを、解析対象ファイル群の共通親ディレクトリを基準にミラー配置する。
   // 例:
   // - source: `/app/src/routes/a.tsx`
-  // - outDir : `report`
-  // - output : `report/src/routes/a.tsx.json`
+  // - outDir : `report/flow`
+  // - output : `report/flow/src/routes/a.tsx.json`
   const filePaths = report.files.map((f) => f.file);
   const baseDir = commonPathPrefix([report.entry, ...filePaths]);
 
   for (const f of report.files) {
     const rel = path.relative(baseDir, f.file);
-    const outFile = path.join(outDirAbs, `${rel}.json`);
-    fs.mkdirSync(path.dirname(outFile), { recursive: true });
-    fs.writeFileSync(outFile, JSON.stringify(f, null, 2) + "\n", "utf8");
+    writeJson(path.join(flowDir, `${rel}.json`), f);
   }
 
-  // 全体メタ情報 (entry / tsconfig / 出力基準ディレクトリなど) を別ファイルに残す。
-  // 各ファイル JSON だけでは復元しにくい情報をここに集約する。
+  // 互換性のためトップレベル `_meta.json` は残しつつ、flow 配下にもメタを置く。
   const meta = {
     entry: report.entry,
     tsconfigUsed: report.tsconfigUsed,
     baseDir,
     files: report.files.map((f) => ({ file: f.file })),
   };
-  fs.writeFileSync(path.join(outDirAbs, "_meta.json"), JSON.stringify(meta, null, 2) + "\n", "utf8");
+  writeJson(path.join(outDirAbs, "_meta.json"), meta);
+  writeJson(path.join(flowDir, "_meta.json"), meta);
+
+  const framework = deriveFrameworkReports(report);
+  writeJson(path.join(frameworkDir, "_summary.json"), framework.summary);
+  for (const [name, payload] of Object.entries(framework.outputs)) {
+    writeJson(path.join(frameworkDir, `${name}.json`), payload);
+  }
+
+  const oauth = deriveOauthReport(report);
+  writeJson(path.join(oauthDir, "_summary.json"), oauth.summary);
+  writeJson(path.join(oauthDir, "redirects.json"), oauth.redirects);
+  writeJson(path.join(oauthDir, "url-param-sets.json"), oauth.urlParamSets);
+  writeJson(path.join(oauthDir, "flows.json"), oauth.oauthLikeFlows);
 
   console.error(`Saved directory report to ${outDirAbs}`);
 }
