@@ -277,6 +277,20 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
     // 関数/メソッド/コンストラクタ呼び出し
     if (ts.isCallExpression(n)) {
       const callee = n.expression.getText(sf);
+      const redirect = redirectCallInfo(n);
+      if (redirect) pushRedirect(n, "call", redirect.api, redirect.targetNode);
+      const urlParamSet = urlParamSetInfo(n);
+      if (urlParamSet) {
+        out.push({
+          kind: "urlParamSet",
+          ...eventBase(n),
+          urlExpr: urlParamSet.urlExpr,
+          key: urlParamSet.keyArg.getText(sf),
+          keyType: typeInfo(checker, urlParamSet.keyArg),
+          value: urlParamSet.valueArg?.getText(sf),
+          valueType: urlParamSet.valueArg ? typeInfo(checker, urlParamSet.valueArg) : undefined,
+        });
+      }
       out.push({
         kind: "call",
         ...eventBase(n),
