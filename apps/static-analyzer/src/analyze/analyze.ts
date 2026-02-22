@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import ts from "typescript";
 import { extractEvents } from "./event";
-import { AnalysisReport, FileReport, FunctionReport } from "./../types/report";
+import { AnalysisReport, FileReport, FunctionReport, ImportReport } from "./../types/report";
 import { locOf } from "../helper/locOf";
 import { functionKind, functionName } from "../helper/function";
 import { errorMessageO } from "../helper/errorMessage";
@@ -56,6 +56,12 @@ export function analyze(entryFile: string): AnalysisReport {
 
   for (const sf of sfs) {
     const functions: FunctionReport[] = [];
+    const imports: ImportReport[] = sf.statements
+      .filter(ts.isImportDeclaration)
+      .map((d) => ({
+        source: ts.isStringLiteral(d.moduleSpecifier) ? d.moduleSpecifier.text : d.moduleSpecifier.getText(sf),
+        syntax: d.getText(sf),
+      }));
 
     const visitTop = (n: ts.Node) => {
       // 「関数としてレポートする対象」かどうかを先に判定する。
@@ -92,7 +98,7 @@ export function analyze(entryFile: string): AnalysisReport {
     visitTop(sf);
 
     // 関数が1つもないファイルはノイズになりやすいのでレポートから除外する。
-    if (functions.length) reports.push({ file: path.resolve(sf.fileName), functions });
+    if (functions.length) reports.push({ file: path.resolve(sf.fileName), imports: imports.length ? imports : undefined, functions });
   }
 
   return {
