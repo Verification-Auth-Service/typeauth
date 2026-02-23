@@ -4,6 +4,7 @@ import { Location } from "../types/tree";
 
 // ノードの位置情報を取得
 export function locOf(sf: ts.SourceFile, node: ts.Node): Location {
+  // TypeScript API は 0-based なので、一般的なエディタ/人間向けに 1-based へ変換する。
   const start = sf.getLineAndCharacterOfPosition(node.getStart(sf, false));
   const end = sf.getLineAndCharacterOfPosition(node.getEnd());
   return {

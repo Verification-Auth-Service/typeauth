@@ -1,1 +1,11 @@
 node_modules
+report.json
+report
+dist
+coverage
+*.log
+*.tsbuildinfo
+*.env
+.DS_Store
+.idea
+.vscode
