@@ -120,18 +120,19 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
   fs.mkdirSync(outDirAbs, { recursive: true });
 
   // レイヤー分離:
-  // - flow      : 既存の汎用フローレポート (ファイル/関数/events)
-  // - framework : import/package 傾向からのフレームワーク判定
-  // - oauth     : redirect / URL param set など認可まわりの派生ビュー
-  const flowDir = path.join(outDirAbs, "flow");
-  const frameworkDir = path.join(outDirAbs, "framework");
-  const oauthDir = path.join(outDirAbs, "oauth");
+  // - source-derived/flow      : 既存の汎用フローレポート (ファイル/関数/events)
+  // - source-derived/framework : import/package 傾向からのフレームワーク判定
+  // - source-derived/oauth     : redirect / URL param set など認可まわりの派生ビュー
+  const sourceDerivedDir = path.join(outDirAbs, "source-derived");
+  const flowDir = path.join(sourceDerivedDir, "flow");
+  const frameworkDir = path.join(sourceDerivedDir, "framework");
+  const oauthDir = path.join(sourceDerivedDir, "oauth");
 
   // ファイルごとのフローレポートを、解析対象ファイル群の共通親ディレクトリを基準にミラー配置する。
   // 例:
   // - source: `/app/src/routes/a.tsx`
-  // - outDir : `report/flow`
-  // - output : `report/flow/src/routes/a.tsx.json`
+  // - outDir : `report/source-derived/flow`
+  // - output : `report/source-derived/flow/src/routes/a.tsx.json`
   const filePaths = report.files.map((f) => f.file);
   const baseDir = commonPathPrefix([report.entry, ...filePaths]);
 
@@ -140,7 +141,7 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
     writeJson(path.join(flowDir, `${rel}.json`), f);
   }
 
-  // 互換性のためトップレベル `_meta.json` は残しつつ、flow 配下にもメタを置く。
+  // 互換性のためトップレベル `_meta.json` は残しつつ、source-derived/flow 配下にもメタを置く。
   const meta = {
     entry: report.entry,
     tsconfigUsed: report.tsconfigUsed,
@@ -148,6 +149,7 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
     files: report.files.map((f) => ({ file: f.file })),
   };
   writeJson(path.join(outDirAbs, "_meta.json"), meta);
+  writeJson(path.join(sourceDerivedDir, "_meta.json"), meta);
   writeJson(path.join(flowDir, "_meta.json"), meta);
 
   const framework = deriveFrameworkReports(report);
