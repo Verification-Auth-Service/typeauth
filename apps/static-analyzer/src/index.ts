@@ -6,6 +6,7 @@ import { analyze } from "./analyze/analyze";
 import type { AnalysisReport } from "./types/report";
 import { deriveFrameworkReports } from "./framework/report";
 import { deriveOauthReport } from "./oauth/report";
+import { deriveStateTransitionReport } from "./state/report";
 
 /**
  * 目的:
@@ -32,7 +33,7 @@ function parseArgs(argv: string[]): CliArgs {
   const rest = [...argv];
   let dirMode = false;
 
-  // 今回サポートするオプションは `-d` のみ。
+  // `-d`: 通常解析のディレクトリ出力
   // 位置は前後どちらでも受けられるようにして、CLI 利用時のストレスを減らす。
   const positional: string[] = [];
   for (const a of rest) {
@@ -51,11 +52,7 @@ function parseArgs(argv: string[]): CliArgs {
 }
 
 function usage(): string {
-  return [
-    "Usage:",
-    "  static-analyzer <entry-file.ts> [output-file.json]",
-    "  static-analyzer -d <entry-file.ts> [output-dir]",
-  ].join("\n");
+  return ["Usage:", "  static-analyzer <entry-file.ts> [output-file.json]", "  static-analyzer -d <entry-file.ts> [output-dir]"].join("\n");
 }
 
 async function confirmDelete(targetAbs: string): Promise<boolean> {
@@ -127,6 +124,7 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
   const flowDir = path.join(sourceDerivedDir, "flow");
   const frameworkDir = path.join(sourceDerivedDir, "framework");
   const oauthDir = path.join(sourceDerivedDir, "oauth");
+  const stateDir = path.join(sourceDerivedDir, "state");
 
   // ファイルごとのフローレポートを、解析対象ファイル群の共通親ディレクトリを基準にミラー配置する。
   // 例:
@@ -163,6 +161,13 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
   writeJson(path.join(oauthDir, "redirects.json"), oauth.redirects);
   writeJson(path.join(oauthDir, "url-param-sets.json"), oauth.urlParamSets);
   writeJson(path.join(oauthDir, "flows.json"), oauth.oauthLikeFlows);
+
+  // `const report = analyze(entry)` の返り値をそのまま入力にして state を派生する。
+  // 既にメモリ上にある `report` を使うため、flow JSON の再読込や再解析は不要。
+  const state = deriveStateTransitionReport(report);
+  writeJson(path.join(stateDir, "_summary.json"), state.summary);
+  writeJson(path.join(stateDir, "files.json"), state.files);
+  writeJson(path.join(stateDir, "functions.json"), state.functions);
 
   console.error(`Saved directory report to ${outDirAbs}`);
 }
