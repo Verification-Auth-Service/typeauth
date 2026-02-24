@@ -124,7 +124,7 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
   const flowDir = path.join(sourceDerivedDir, "flow");
   const frameworkDir = path.join(sourceDerivedDir, "framework");
   const oauthDir = path.join(sourceDerivedDir, "oauth");
-  const stateDir = path.join(sourceDerivedDir, "state");
+  const stateDir = path.join(outDirAbs, "state");
 
   // ファイルごとのフローレポートを、解析対象ファイル群の共通親ディレクトリを基準にミラー配置する。
   // 例:
