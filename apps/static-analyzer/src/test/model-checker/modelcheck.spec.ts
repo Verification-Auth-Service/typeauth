@@ -1,5 +1,8 @@
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import { describe, expect, it } from "vitest"
-import { compileSpec, modelCheck } from "../../model-checker/lispauth"
+import { buildLispauthDsl, compileSpec, modelCheck, q, writeLispauthDslReport } from "../../model-checker/lispauth"
 
 const unsafeSpec = `
 (spec OAuthPKCE
@@ -64,6 +67,60 @@ const safeSpec = unsafeSpec
 )
 
 describe("state-machine DSL model checker", () => {
+  it("builds lispauth DSL text from a draft object", () => {
+    const dsl = buildLispauthDsl({
+      name: "Mini",
+      machine: {
+        states: ["Start", "Done"],
+        vars: [
+          { name: "session.stage", type: ["enum", "Start", "Done"] },
+          { name: "now", type: "int" },
+        ],
+        events: [
+          {
+            name: "Finish",
+            when: ["=", "session.stage", q("Start")],
+            do: [["set", "session.stage", q("Done")]],
+            goto: "Done",
+          },
+        ],
+      },
+      env: { scheduler: "worst", sessions: 1, time: { maxSteps: 1, tick: 1 } },
+      property: {
+        invariants: [{ name: "stage-defined", expr: ["not", ["=", "session.stage", "null-never"]] }],
+      },
+    })
+
+    expect(dsl).toContain("(spec Mini")
+    expect(dsl).toContain("(event Finish")
+    const compiled = compileSpec(dsl)
+    expect(compiled.name).toBe("Mini")
+    expect(compiled.events.map((e) => e.name)).toEqual(["Finish"])
+  })
+
+  it("writes built DSL to report-like directory with readable filename", () => {
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "lispauth-report-"))
+    const result = writeLispauthDslReport(
+      {
+        name: "OAuth PKCE Demo",
+        machine: {
+          states: ["Start", "Done"],
+          vars: [{ name: "session.stage", type: ["enum", "Start", "Done"] }],
+          events: [{ name: "Finish", do: [["set", "session.stage", q("Done")]], goto: "Done" }],
+        },
+      },
+      {
+        outDir,
+        now: new Date("2026-02-25T10:30:45"),
+      },
+    )
+
+    expect(result.fileName).toBe("lispauth-oauth-pkce-demo-20260225-103045.lispauth")
+    expect(result.filePath.startsWith(outDir)).toBe(true)
+    expect(fs.existsSync(result.filePath)).toBe(true)
+    expect(fs.readFileSync(result.filePath, "utf8")).toBe(result.dsl)
+  })
+
   it("parses and compiles the 3-block top-level spec", () => {
     const compiled = compileSpec(unsafeSpec)
     expect(compiled.name).toBe("OAuthPKCE")
