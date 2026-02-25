@@ -4,7 +4,8 @@
   "description": "",
   "main": "src/index.ts",
   "scripts": {
-    "test": "vitest"
+    "test": "vitest",
+    "lispauth:check": "tsx src/run-lispauth.ts"
   },
   "keywords": [],
   "author": "",
