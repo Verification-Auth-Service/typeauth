@@ -6,8 +6,8 @@ import { analyze } from "./analyze/analyze";
 import type { AnalysisReport } from "./types/report";
 import { deriveFrameworkReports } from "./framework/report";
 import { deriveOauthReport } from "./oauth/report";
-import { q, writeLispauthDslReport } from "./model-checker/lispauth";
-import type { LispauthSpecDraft } from "./model-checker/lispauth";
+import { writeLispauthDslReport } from "./model-checker/lispauth";
+import { buildLispauthDraftFromDerivedReports } from "./model-checker/lispauth/draft-from-derived";
 import { deriveStateTransitionReport } from "./state/report";
 
 /**
@@ -96,130 +96,6 @@ function writeSingleReport(report: AnalysisReport, outFile: string) {
 function writeJson(filePath: string, value: unknown) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2) + "\n", "utf8");
-}
-
-function buildLispauthDraftFromDerivedReports(args: {
-  report: AnalysisReport;
-  framework: ReturnType<typeof deriveFrameworkReports>;
-  oauth: ReturnType<typeof deriveOauthReport>;
-  state: ReturnType<typeof deriveStateTransitionReport>;
-}): LispauthSpecDraft {
-  const { report, framework, oauth, state } = args;
-
-  const entryBase = path.basename(report.entry, path.extname(report.entry));
-  const topOauthFlow = oauth.oauthLikeFlows[0];
-  const topFnBase = topOauthFlow?.functionName ? topOauthFlow.functionName.replace(/[^A-Za-z0-9_]/g, "_") : undefined;
-  const frameworkTag = framework.summary.detectedFrameworks[0]?.replace(/[^A-Za-z0-9_]/g, "_");
-  const specName = [frameworkTag, "OAuthPKCE", (topFnBase ?? entryBase) || "entry"].filter(Boolean).join("_");
-
-  const observedParamKeys = new Set(oauth.urlParamSets.map((x) => x.key));
-  const hasStateParam = observedParamKeys.has("\"state\"");
-  const hasPkce = observedParamKeys.has("\"code_challenge\"") || observedParamKeys.has("\"code_challenge_method\"");
-
-  const callbackFunctions = new Set(oauth.redirects.map((r) => `${r.file}::${r.functionId}`));
-  const candidateSessionCount = callbackFunctions.size > 1 || oauth.summary.redirectCount > 1 ? 2 : 1;
-  const terminalHeavy = state.summary.terminalTransitionCount > 0;
-  const maxSteps = Math.min(30, Math.max(8, state.summary.functionCount > 20 ? 24 : 16));
-  const allowFlags = ["reorder", "duplicate", ...(candidateSessionCount > 1 ? (["cross-delivery"] as const) : [])];
-
-  return {
-    name: specName,
-    machine: {
-      states: ["Start", "AuthStarted", "CodeReceived", "TokenIssued", "LoggedOut"],
-      vars: [
-        { name: "session.state", type: ["maybe", "string"] },
-        { name: "session.verifier", type: ["maybe", "string"] },
-        { name: "session.stage", type: ["enum", "Start", "AuthStarted", "TokenIssued", "LoggedOut"] },
-        { name: "used-codes", type: ["set", "string"] },
-        { name: "now", type: "int" },
-      ],
-      events: [
-        {
-          name: "BeginAuth",
-          params: [],
-          when: ["or", ["=", "session.stage", q("Start")], ["=", "session.stage", q("LoggedOut")]],
-          do: [
-            ["set", "session.state", ["fresh", "state"]],
-            ["set", "session.verifier", ["fresh", "verifier"]],
-            ["set", "session.stage", q("AuthStarted")],
-          ],
-          goto: "AuthStarted",
-        },
-        {
-          name: "Callback",
-          params: [
-            { name: "code", type: "string" },
-            { name: "state", type: "string" },
-          ],
-          when: ["=", "session.stage", q("AuthStarted")],
-          require: hasStateParam ? [["=", "state", "session.state"]] : [],
-          do: [["noop"]],
-          goto: "CodeReceived",
-        },
-        {
-          name: "ExchangeToken",
-          params: [
-            { name: "code", type: "string" },
-            { name: "verifier", type: "string" },
-          ],
-          when: ["or", ["=", "session.stage", q("AuthStarted")], ["=", "session.stage", q("CodeReceived")]],
-          require: [
-            ...(hasPkce ? [["=", "verifier", "session.verifier"]] : []),
-            ["not", ["in", "code", "used-codes"]],
-          ],
-          do: [
-            ["set", "used-codes", ["add", "used-codes", "code"]],
-            ["set", "session.stage", q("TokenIssued")],
-          ],
-          goto: "TokenIssued",
-        },
-        {
-          name: "Logout",
-          params: [],
-          when: true,
-          do: [["set", "session.stage", q("LoggedOut")]],
-          goto: "LoggedOut",
-        },
-      ],
-    },
-    env: {
-      scheduler: "worst",
-      allow: allowFlags,
-      sessions: candidateSessionCount,
-      time: { maxSteps, tick: 1 },
-    },
-    property: {
-      invariants: [
-        ...(hasStateParam
-          ? [
-              {
-                name: "callback-must-match-state",
-                expr: ["=>", ["and", ["=", "last.event", q("Callback")], "last.transitioned"], ["=", "last.args.state", "session.state"]],
-              },
-            ]
-          : []),
-        {
-          name: "token-issued-requires-verifier",
-          expr: hasPkce
-            ? ["=>", ["=", "session.stage", q("TokenIssued")], ["not", ["=", "session.verifier", null]]]
-            : ["=>", ["=", "session.stage", q("TokenIssued")], true],
-        },
-        {
-          name: "no-code-replay",
-          expr: ["=>", ["and", ["=", "last.event", q("ExchangeToken")], "last.transitioned"], ["in", "last.args.code", "used-codes"]],
-        },
-        ...(terminalHeavy
-          ? [
-              {
-                name: "logout-reaches-loggedout",
-                expr: ["=>", ["and", ["=", "last.event", q("Logout")], "last.transitioned"], ["=", "session.stage", q("LoggedOut")]],
-              },
-            ]
-          : []),
-      ],
-      counterexample: { format: "trace", minimize: "steps" },
-    },
-  };
 }
 
 async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
