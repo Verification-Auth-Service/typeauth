@@ -161,9 +161,11 @@ function toFunctionTransition(file: FileReport, fn: FunctionReport): FunctionSta
   // 空関数も「状態グラフとしては存在する」ので START->END を 1 本だけ張る。
   // これにより関数一覧UIでの扱いが均一になる (node/edge 0 件にならない)。
   if (fn.events.length === 0) {
-    edges.push({ from: startId, to: endId, kind: "terminal", label: "empty" });
+    // 実際の終端イベント (return/throw/redirect) ではないため terminal にはしない。
+    edges.push({ from: startId, to: endId, kind: "sequence", label: "empty" });
   } else {
-    edges.push({ from: startId, to: `${fn.id}:e0`, kind: "sequence", eventIndex: 0 });
+    // START は flow.events の要素ではないため eventIndex は付与しない。
+    edges.push({ from: startId, to: `${fn.id}:e0`, kind: "sequence" });
   }
 
   fn.events.forEach((e, i) => {
