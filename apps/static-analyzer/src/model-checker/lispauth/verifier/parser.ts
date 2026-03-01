@@ -1,39 +1,16 @@
-import type { Sexp } from "./types"
+import { isList, isSym, sym } from "../shared/syntax-node"
+import type { SyntaxNode } from "../shared/syntax-node"
 
-// `'AuthStarted` のような quoted symbol を、文字列とは区別して保持する。
-// DSL では enum 値や goto 先の記法として使うため、識別しておくと compile 時に扱いやすい。
-/**
- * 入力例: `sym("state")`
- * 成果物: 処理結果オブジェクトを返す。
- */
-export function sym(name: string) {
-  return { kind: "symbol", name } as const
-}
-
-/**
- * 入力例: `isSym(["spec"], "state")`
- * 成果物: 条件一致時に `true`、不一致時に `false` を返す。
- */
-export function isSym(x: Sexp, name?: string): x is { kind: "symbol"; name: string } {
-  return typeof x === "object" && x !== null && !Array.isArray(x) && x.kind === "symbol" && (name ? x.name === name : true)
-}
-
-/**
- * 入力例: `isList(["spec"])`
- * 成果物: 条件一致時に `true`、不一致時に `false` を返す。
- */
-export function isList(x: Sexp): x is Sexp[] {
-  return Array.isArray(x)
-}
+export { isList, isSym, sym }
 
 // lispauth 用の最小 S 式パーサ。
 // 目的は「一般 Lisp の完全実装」ではなく、仕様 DSL の構文木を安定して得ること。
 // そのため reader macro や dotted pair 等は未対応。
 /**
- * 入力例: `parseSexp("(spec (vars) (machine) (property))")`
+ * 入力例: `parseSyntax("(spec (vars) (machine) (property))")`
  * 成果物: 入力DSLをS式ASTへ変換して返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
  */
-export function parseSexp(input: string): Sexp {
+export function parseSyntax(input: string): SyntaxNode {
   const tokens = tokenize(input)
   let i = 0
 
@@ -41,12 +18,12 @@ export function parseSexp(input: string): Sexp {
    * 入力例: `parseOne()`
    * 成果物: 処理結果オブジェクトを返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
    */
-  function parseOne(): Sexp {
+  function parseOne(): SyntaxNode {
     const t = tokens[i]
     if (!t) throw new Error("Unexpected EOF")
     if (t === "(") {
       i += 1
-      const out: Sexp[] = []
+      const out: SyntaxNode[] = []
       while (tokens[i] !== ")") {
         if (i >= tokens.length) throw new Error("Unclosed list")
         out.push(parseOne())

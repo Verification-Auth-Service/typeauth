@@ -1,7 +1,6 @@
-// lispauth DSL の「共有語彙」。
-// ここに型を集約しておくことで、parser/compile/engine の責務を分離しても
-// データ構造の契約が 1 箇所で追えるようにする。
-export type Sexp = string | number | boolean | null | { kind: "symbol"; name: string } | Sexp[]
+import type { SyntaxNode } from "../shared/syntax-node"
+
+export type { SyntaxNode }
 
 // DSL の vars セクションで使う簡易型。
 // 実行時表現 (Value) と 1:1 ではない。例: `enum` は初期値決定にも使う。
@@ -20,15 +19,15 @@ export type Param = { name: string; type: string }
 export type EventDef = {
   name: string
   params: Param[]
-  whenExpr: Sexp
-  requireExprs: Sexp[]
-  doOps: Sexp[]
+  whenExpr: SyntaxNode
+  requireExprs: SyntaxNode[]
+  doOps: SyntaxNode[]
   gotoState?: string
 }
 
 export type InvariantDef = {
   name: string
-  expr: Sexp
+  expr: SyntaxNode
 }
 
 // `counterexample` ブロックの出力方針。

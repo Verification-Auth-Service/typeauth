@@ -1,9 +1,10 @@
 import path from "node:path"
-import type { AnalysisReport } from "../../types/report"
-import { deriveFrameworkReports } from "../../framework/report"
-import { deriveOauthReport } from "../../oauth/report"
-import { deriveStateTransitionReport } from "../../state/report"
-import { q, type LispauthSpecDraft } from "./builder"
+import type { AnalysisReport } from "../../../types/report"
+import { deriveFrameworkReports } from "../../../framework/report"
+import { deriveOauthReport } from "../../../oauth/report"
+import { deriveStateTransitionReport } from "../../../state/report"
+import { q } from "./builder"
+import type { LispauthSpecDraft } from "./types"
 
 // `src/index.ts` から切り出した「派生レポート -> lispauth DSL 草案」変換ロジック。
 //

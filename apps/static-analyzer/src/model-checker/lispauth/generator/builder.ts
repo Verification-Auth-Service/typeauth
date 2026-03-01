@@ -1,49 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { sym } from "./parser";
-import type { Sexp } from "./types";
-
-// lispauth DSL 出力用の入力型。
-// `when / require / do / invariant.expr` は S 式 (Sexp) をそのまま渡す設計にして、
-// builder 自身が式言語の仕様まで抱え込まないようにしている。
-export type LispauthSpecDraft = {
-  name: string;
-  machine: {
-    states: string[];
-    vars: Array<{ name: string; type: Sexp }>;
-    events: Array<{
-      name: string;
-      params?: Array<{ name: string; type: string }>;
-      when?: Sexp;
-      require?: Sexp[];
-      do?: Sexp[];
-      goto?: string;
-    }>;
-  };
-  env?: {
-    scheduler?: string;
-    allow?: string[];
-    sessions?: number;
-    time?: { maxSteps?: number; tick?: number };
-  };
-  property?: {
-    invariants?: Array<{ name: string; expr: Sexp }>;
-    counterexample?: { format?: string; minimize?: "steps" };
-  };
-};
-
-export type LispauthDslWriteResult = {
-  filePath: string;
-  fileName: string;
-  dsl: string;
-};
-
-export type LispauthDslWriteOptions = {
-  outDir?: string;
-  now?: Date;
-  fileStem?: string;
-};
+import { sym } from "../shared/syntax-node";
+import type { SyntaxNode } from "../shared/syntax-node";
+import type { LispauthDslWriteOptions, LispauthDslWriteResult, LispauthSpecDraft } from "./types";
 
 // quoted symbol を builder 利用側でも作りやすくするための再公開ヘルパ。
 // 例: q("AuthStarted") -> `'AuthStarted` 相当の AST ノード
@@ -77,33 +37,33 @@ export function writeLispauthDslReport(draft: LispauthSpecDraft, options: Lispau
 }
 
 /**
- * 入力例: `buildSpecSexp({ name: "oauth-spec", machine: { vars: [], events: [], init: [], assumptions: [] }, property: { invariants: [] } })`
+ * 入力例: `buildSpecSyntax({ name: "oauth-spec", machine: { vars: [], events: [], init: [], assumptions: [] }, property: { invariants: [] } })`
  * 成果物: draft を top-level `(spec ...)` S式へ変換して返す。
  */
-export function buildSpecSexp(draft: LispauthSpecDraft): Sexp {
-  const machine: Sexp[] = [
+export function buildSpecSyntax(draft: LispauthSpecDraft): SyntaxNode {
+  const machine: SyntaxNode[] = [
     "machine",
     ["states", ...draft.machine.states],
     ["vars", ...draft.machine.vars.map((v) => [v.name, v.type])],
-    ...draft.machine.events.map(buildEventSexp),
+    ...draft.machine.events.map(buildEventSyntax),
   ];
 
   const envDraft = draft.env ?? {};
-  const env: Sexp[] = ["env"];
+  const env: SyntaxNode[] = ["env"];
   if (envDraft.scheduler) env.push(["scheduler", envDraft.scheduler]);
   for (const a of envDraft.allow ?? []) env.push(["allow", a]);
   if (typeof envDraft.sessions === "number") env.push(["sessions", envDraft.sessions]);
   if (envDraft.time && (typeof envDraft.time.maxSteps === "number" || typeof envDraft.time.tick === "number")) {
-    const time: Sexp[] = ["time"];
+    const time: SyntaxNode[] = ["time"];
     if (typeof envDraft.time.maxSteps === "number") time.push(["max-steps", envDraft.time.maxSteps]);
     if (typeof envDraft.time.tick === "number") time.push(["tick", envDraft.time.tick]);
     env.push(time);
   }
 
   const propertyDraft = draft.property ?? {};
-  const property: Sexp[] = ["property", ...(propertyDraft.invariants ?? []).map((inv) => ["invariant", inv.name, inv.expr] satisfies Sexp[])];
+  const property: SyntaxNode[] = ["property", ...(propertyDraft.invariants ?? []).map((inv) => ["invariant", inv.name, inv.expr] satisfies SyntaxNode[])];
   if (propertyDraft.counterexample) {
-    const cx: Sexp[] = ["counterexample"];
+    const cx: SyntaxNode[] = ["counterexample"];
     if (propertyDraft.counterexample.format) cx.push(["format", propertyDraft.counterexample.format]);
     if (propertyDraft.counterexample.minimize) cx.push(["minimize", propertyDraft.counterexample.minimize]);
     property.push(cx);
@@ -113,11 +73,11 @@ export function buildSpecSexp(draft: LispauthSpecDraft): Sexp {
 }
 
 /**
- * 入力例: `buildEventSexp(1)`
+ * 入力例: `buildEventSyntax(1)`
  * 成果物: 処理結果オブジェクトを返す。
  */
-function buildEventSexp(event: LispauthSpecDraft["machine"]["events"][number]): Sexp {
-  const out: Sexp[] = ["event", event.name, (event.params ?? []).map((p) => [p.name, p.type])];
+function buildEventSyntax(event: LispauthSpecDraft["machine"]["events"][number]): SyntaxNode {
+  const out: SyntaxNode[] = ["event", event.name, (event.params ?? []).map((p) => [p.name, p.type])];
 
   if (event.when !== undefined) out.push(["when", event.when]);
   for (const r of event.require ?? []) out.push(["require", r]);
@@ -127,10 +87,10 @@ function buildEventSexp(event: LispauthSpecDraft["machine"]["events"][number]): 
 }
 
 /**
- * 入力例: `renderSexp(["spec"], 1)`
+ * 入力例: `renderSyntax(["spec"], 1)`
  * 成果物: S式を整形済みDSL文字列へレンダリングして返す。
  */
-export function renderSexp(node: Sexp, indent = 2): string {
+export function renderSyntax(node: SyntaxNode, indent = 2): string {
   return renderNode(node, 0, indent);
 }
 
@@ -138,7 +98,7 @@ export function renderSexp(node: Sexp, indent = 2): string {
  * 入力例: `renderNode(["spec"], 1, 1)`
  * 成果物: 整形・正規化後の文字列を返す。
  */
-function renderNode(node: Sexp, level: number, indent: number): string {
+function renderNode(node: SyntaxNode, level: number, indent: number): string {
   if (Array.isArray(node)) return renderList(node, level, indent);
   if (typeof node === "string") return renderAtom(node);
   if (typeof node === "number") return String(node);
@@ -151,7 +111,7 @@ function renderNode(node: Sexp, level: number, indent: number): string {
  * 入力例: `renderList([], 1, 1)`
  * 成果物: 整形・正規化後の文字列を返す。
  */
-function renderList(list: Sexp[], level: number, indent: number): string {
+function renderList(list: SyntaxNode[], level: number, indent: number): string {
   if (list.length === 0) return "()";
   if (list.every(isAtomicLike)) {
     return `(${list.map((x) => renderNode(x, level + 1, indent)).join(" ")})`;
@@ -178,7 +138,7 @@ function renderList(list: Sexp[], level: number, indent: number): string {
  * 入力例: `isAtomicLike(["spec"])`
  * 成果物: 条件一致時に `true`、不一致時に `false` を返す。
  */
-function isAtomicLike(node: Sexp): boolean {
+function isAtomicLike(node: SyntaxNode): boolean {
   return !Array.isArray(node);
 }
 
@@ -198,10 +158,10 @@ function renderAtom(value: string): string {
  * 成果物: 整形・正規化後の文字列を返す。
  */
 function defaultReportDir(): string {
-  // `builder.ts` は `src/model-checker/lispauth/` 配下にあるので、3階層上が package root。
+  // `generator/builder.ts` は `src/model-checker/lispauth/` 配下にあるので、4階層上が package root。
   // そこに `report/` を作ることで、ユーザー要望の `apps/static-analyzer/report/` をデフォルトにする。
   const here = path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(here, "..", "..", "..", "report");
+  return path.resolve(here, "..", "..", "..", "..", "report");
 }
 
 /**
@@ -371,9 +331,9 @@ function pushLine(lines: string[], level: number, text: string) {
  * 入力例: `pushRendered(["/a.ts", "/b.ts"], 1, ["spec"])`
  * 成果物: 副作用のみを実行する（戻り値なし）。
  */
-function pushRendered(lines: string[], level: number, node: Sexp) {
+function pushRendered(lines: string[], level: number, node: SyntaxNode) {
   const pad = " ".repeat(level * 2);
-  for (const line of renderSexp(node).split("\n")) {
+  for (const line of renderSyntax(node).split("\n")) {
     lines.push(`${pad}${line}`);
   }
 }

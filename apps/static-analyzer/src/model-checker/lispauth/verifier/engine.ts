@@ -1,5 +1,6 @@
 import { isList, isSym } from "./parser"
-import type { CompiledSpec, EventDef, ModelCheckResult, RuntimeState, Sexp, Value } from "./types"
+import type { SyntaxNode } from "../shared/syntax-node"
+import type { CompiledSpec, EventDef, ModelCheckResult, RuntimeState, Value } from "./types"
 
 // CLI などから探索進捗を購読するための通知ペイロード。
 // 「内部状態そのもの」を渡すと API が重くなり、将来の内部変更にも弱くなるため、
@@ -355,7 +356,7 @@ function cloneStore<T extends Record<string, Value>>(s: T): T {
  * 入力例: `runOp(["set", "session.stage", "AuthStarted"], { globals: {}, sessions: [], usedCodes: new Set(), trace: [] }, 1, { state: "s1" })`
  * 成果物: 副作用のみを実行する（戻り値なし）。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
  */
-function runOp(op: Sexp, state: RuntimeState, sessionIndex: number, args: Record<string, Value>) {
+function runOp(op: SyntaxNode, state: RuntimeState, sessionIndex: number, args: Record<string, Value>) {
   // `do` 節の副作用 DSL。
   // 最小実装では `set` と `noop` のみ対応し、それ以外は明示的に例外で落とす。
   // (暗黙に無視すると、仕様の書き間違いを見逃しやすいため)
@@ -393,7 +394,7 @@ function setRef(ref: string, value: Value, state: RuntimeState, sessionIndex: nu
  * 入力例: `evalExpr(["=", "session.stage", "AuthStarted"], { globals: {}, sessions: [{ stage: "AuthStarted" }], usedCodes: new Set(), trace: [] }, 1, { state: "s1" })`
  * 成果物: 式を評価した `Value` を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
  */
-function evalExpr(expr: Sexp, state: RuntimeState, sessionIndex: number, args: Record<string, Value> = {}): Value {
+function evalExpr(expr: SyntaxNode, state: RuntimeState, sessionIndex: number, args: Record<string, Value> = {}): Value {
   // property/guard 共通の式評価器。
   // 「評価可能なものを増やす」よりも、「未対応をすぐ失敗させる」ことを優先している。
   // これは静かに誤解釈して偽陰性を出すより、安全側に倒すため。

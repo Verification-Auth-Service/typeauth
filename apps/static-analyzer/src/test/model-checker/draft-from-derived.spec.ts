@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { deriveFrameworkReports } from "../../framework/report"
-import { buildLispauthDraftUnitsFromDerivedReports } from "../../model-checker/lispauth/draft-from-derived"
+import { buildLispauthDraftUnitsFromDerivedReports } from "../../model-checker/lispauth/generator"
 import { deriveOauthReport } from "../../oauth/report"
 import { deriveStateTransitionReport } from "../../state/report"
 import type { AnalysisReport } from "../../types/report"

@@ -5,7 +5,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { deriveFrameworkReports } from "./framework/report";
 import { deriveHttpReport } from "./http/report";
 import { writeLispauthDslReport } from "./model-checker/lispauth";
-import { buildLispauthDraftFromDerivedReports, buildLispauthDraftUnitsFromDerivedReports } from "./model-checker/lispauth/draft-from-derived";
+import { buildLispauthDraftFromDerivedReports, buildLispauthDraftUnitsFromDerivedReports } from "./model-checker/lispauth/generator";
 import { deriveOauthReportFromHttp } from "./oauth/report";
 import { deriveStateTransitionReport } from "./state/report";
 import type { AnalysisReport } from "./types/report";

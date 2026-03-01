@@ -1,5 +1,6 @@
-import { isList, isSym, parseSexp } from "./parser"
-import type { CompiledSpec, CounterexampleOptions, EventDef, InvariantDef, Sexp, VarType } from "./types"
+import { isList, isSym, parseSyntax } from "./parser"
+import type { SyntaxNode } from "../shared/syntax-node"
+import type { CompiledSpec, CounterexampleOptions, EventDef, InvariantDef, VarType } from "./types"
 
 // 文字列 DSL -> 検証エンジン用の内部表現へ変換する。
 // 役割は「構文木の正規化」であり、探索ロジックや意味評価は engine.ts に持ち込まない。
@@ -8,7 +9,7 @@ import type { CompiledSpec, CounterexampleOptions, EventDef, InvariantDef, Sexp,
  * 成果物: DSL ASTを model checker 用 `CompiledSpec` へ変換して返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
  */
 export function compileSpec(source: string): CompiledSpec {
-  const root = parseSexp(source)
+  const root = parseSyntax(source)
   if (!isList(root) || root.length < 2 || root[0] !== "spec" || typeof root[1] !== "string") {
     throw new Error("Root must be (spec Name ...)")
   }
@@ -45,7 +46,7 @@ export function compileSpec(source: string): CompiledSpec {
  * 入力例: `findBlock(["spec"], "state")`
  * 成果物: 0件以上の要素を含む配列を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
  */
-function findBlock(parent: Sexp, name: string): Sexp[] {
+function findBlock(parent: SyntaxNode, name: string): SyntaxNode[] {
   // top-level / machine / env / property は順不同で書けるように、名前検索にしている。
   if (!isList(parent)) throw new Error(`Expected list for block parent: ${name}`)
   const hit = parent.find((x) => isList(x) && x[0] === name)
@@ -57,7 +58,7 @@ function findBlock(parent: Sexp, name: string): Sexp[] {
  * 入力例: `requireList(["spec"], "state")`
  * 成果物: 0件以上の要素を含む配列を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
  */
-function requireList(x: Sexp, label: string): Sexp[] {
+function requireList(x: SyntaxNode, label: string): SyntaxNode[] {
   if (!isList(x)) throw new Error(`Expected list: ${label}`)
   return x
 }
@@ -66,7 +67,7 @@ function requireList(x: Sexp, label: string): Sexp[] {
  * 入力例: `asString(["spec"])`
  * 成果物: 整形・正規化後の文字列を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
  */
-function asString(x: Sexp): string {
+function asString(x: SyntaxNode): string {
   if (typeof x !== "string") throw new Error(`Expected string atom, got ${JSON.stringify(x)}`)
   return x
 }
@@ -75,7 +76,7 @@ function asString(x: Sexp): string {
  * 入力例: `compileVar([])`
  * 成果物: 整形・正規化後の文字列を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
  */
-function compileVar(node: Sexp[]): { name: string; type: VarType } {
+function compileVar(node: SyntaxNode[]): { name: string; type: VarType } {
   // vars は `(session.state (maybe string))` のような 2 要素形式。
   // ここで型だけ解釈し、スコープ (`session.` / global) は engine 側で初期化時に見る。
   if (node.length !== 2 || typeof node[0] !== "string") throw new Error(`Invalid var: ${JSON.stringify(node)}`)
@@ -86,7 +87,7 @@ function compileVar(node: Sexp[]): { name: string; type: VarType } {
  * 入力例: `compileType(["spec"])`
  * 成果物: 処理結果オブジェクトを返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
  */
-function compileType(node: Sexp): VarType {
+function compileType(node: SyntaxNode): VarType {
   if (typeof node === "string") {
     if (node === "int") return { kind: "int" }
     if (node === "string") return { kind: "string" }
@@ -103,7 +104,7 @@ function compileType(node: Sexp): VarType {
  * 入力例: `compileEvent([])`
  * 成果物: 1イベント定義を `EventDef` 形式へコンパイルして返す。
  */
-function compileEvent(node: Sexp[]): EventDef {
+function compileEvent(node: SyntaxNode[]): EventDef {
   // event の本文は DSL 的には宣言順をある程度自由にしている。
   // compile 後は `when / require* / do / goto` に集約し、評価順序をエンジン側で固定する。
   const name = asString(node[1])
@@ -113,9 +114,9 @@ function compileEvent(node: Sexp[]): EventDef {
     return { name: asString(l[0]), type: asString(l[1]) }
   })
 
-  let whenExpr: Sexp = true
-  const requireExprs: Sexp[] = []
-  let doOps: Sexp[] = []
+  let whenExpr: SyntaxNode = true
+  const requireExprs: SyntaxNode[] = []
+  let doOps: SyntaxNode[] = []
   let gotoState: string | undefined
 
   for (const part of node.slice(3)) {
@@ -133,7 +134,7 @@ function compileEvent(node: Sexp[]): EventDef {
  * 入力例: `asQuotedOrString(["spec"])`
  * 成果物: 整形・正規化後の文字列を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
  */
-function asQuotedOrString(x: Sexp): string {
+function asQuotedOrString(x: SyntaxNode): string {
   if (typeof x === "string") return x
   if (isSym(x)) return x.name
   throw new Error(`Expected symbol/string: ${JSON.stringify(x)}`)
@@ -143,7 +144,7 @@ function asQuotedOrString(x: Sexp): string {
  * 入力例: `compileEnv([])`
  * 成果物: `op/require` ブロックを実行可能形式へ変換して返す。
  */
-function compileEnv(node: Sexp[]) {
+function compileEnv(node: SyntaxNode[]) {
   // env は「最悪スケジューラの探索境界」を与える。
   // 現時点では `allow duplicate/reorder` はフラグ保持のみで、engine の探索は常に worst-case 寄り。
   let sessions = 1
@@ -177,7 +178,7 @@ function compileEnv(node: Sexp[]) {
  * 入力例: `compileProperties([])`
  * 成果物: invariant 群を `properties.invariants` へ変換して返す。
  */
-function compileProperties(node: Sexp[]) {
+function compileProperties(node: SyntaxNode[]) {
   // property は将来的に safety/liveness を分けられるように独立関数化している。
   // 現状は invariant + counterexample の最小セットのみ対応。
   const invariants: InvariantDef[] = []
