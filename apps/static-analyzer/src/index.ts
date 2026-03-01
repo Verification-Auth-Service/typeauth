@@ -41,6 +41,10 @@ type CliArgs = {
   error?: string;
 };
 
+/**
+ * 入力例: `parseArgs(["/a.ts", "/b.ts"])`
+ * 成果物: CLI引数を解釈した `CliArgs` を返す。オプション不足時は `error` を設定する。
+ */
 function parseArgs(argv: string[]): CliArgs {
   let dirMode = false;
   const entries: EntryRoles = {};
@@ -77,6 +81,10 @@ function parseArgs(argv: string[]): CliArgs {
   };
 }
 
+/**
+ * 入力例: `usage()`
+ * 成果物: 実行方法を複数行でまとめたヘルプ文字列を返す。
+ */
 function usage(): string {
   return [
     "Usage:",
@@ -86,6 +94,10 @@ function usage(): string {
   ].join("\n");
 }
 
+/**
+ * 入力例: `confirmDelete("/oauth/callback?code=abc")`
+ * 成果物: 対話入力の結果を `Promise<boolean>` で返す。`yes` 系なら `true`、それ以外は `false`。
+ */
 async function confirmDelete(targetAbs: string): Promise<boolean> {
   // 非対話環境では確認できないため、安全側に倒して中断する。
   if (!process.stdin.isTTY || !process.stdout.isTTY) return false;
@@ -99,6 +111,10 @@ async function confirmDelete(targetAbs: string): Promise<boolean> {
   }
 }
 
+/**
+ * 入力例: `commonPathPrefix(["/a.ts", "/b.ts"])`
+ * 成果物: 複数パスの共通プレフィックスとなる絶対パス文字列を返す。
+ */
 function commonPathPrefix(paths: string[]): string {
   if (!paths.length) return process.cwd();
   let current = path.resolve(paths[0]);
@@ -115,6 +131,10 @@ function commonPathPrefix(paths: string[]): string {
   return current;
 }
 
+/**
+ * 入力例: `uniqueNonEmpty([])`
+ * 成果物: 空値を除去し絶対パスで重複排除した配列を返す。
+ */
 function uniqueNonEmpty(values: Array<string | undefined>): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -128,6 +148,10 @@ function uniqueNonEmpty(values: Array<string | undefined>): string[] {
   return out;
 }
 
+/**
+ * 入力例: `mergeImports([], [])`
+ * 成果物: `source+syntax` 単位で重複排除した import 配列を返す。 失敗時: 条件に合わない場合は `undefined` を返す。
+ */
 function mergeImports(base: ImportReport[] | undefined, extra: ImportReport[] | undefined): ImportReport[] | undefined {
   const merged = new Map<string, ImportReport>();
   for (const x of base ?? []) merged.set(`${x.source}\u0000${x.syntax}`, x);
@@ -135,6 +159,10 @@ function mergeImports(base: ImportReport[] | undefined, extra: ImportReport[] | 
   return merged.size ? [...merged.values()] : undefined;
 }
 
+/**
+ * 入力例: `mergeFileReport({ file: "/workspace/src/index.ts", functions: [] }, { file: "/workspace/src/index.ts", functions: [] })`
+ * 成果物: `file/imports/functions` を統合した `FileReport` を返す。
+ */
 function mergeFileReport(base: FileReport, extra: FileReport): FileReport {
   const fnMap = new Map(base.functions.map((f) => [f.id, f]));
   for (const fn of extra.functions) {
@@ -147,6 +175,10 @@ function mergeFileReport(base: FileReport, extra: FileReport): FileReport {
   };
 }
 
+/**
+ * 入力例: `buildCompositeReport("/workspace/src/index.ts", { entry: "/workspace/src/index.ts", files: [] }, [])`
+ * 成果物: `entries/tsconfigUsedByEntry/files` をまとめた統合 `AnalysisReport` を返す。
+ */
 function buildCompositeReport(entry: string, roleEntries: AnalysisReport["entries"] | undefined, reports: AnalysisReport[]): AnalysisReport {
   const fileMap = new Map<string, FileReport>();
   for (const r of reports) {
@@ -168,6 +200,10 @@ function buildCompositeReport(entry: string, roleEntries: AnalysisReport["entrie
   };
 }
 
+/**
+ * 入力例: `resolveRequestedEntries({ dirMode: false, entry: "./src/index.ts" })`
+ * 成果物: 解析対象の entry 群を解決し、解決不能なら `null` を返す。
+ */
 function resolveRequestedEntries(cli: CliArgs): {
   entry: string;
   roleEntries?: AnalysisReport["entries"];
@@ -195,6 +231,10 @@ function resolveRequestedEntries(cli: CliArgs): {
   };
 }
 
+/**
+ * 入力例: `writeSingleReport({ entry: "/workspace/src/index.ts", files: [] }, "/workspace/src/index.ts")`
+ * 成果物: レポートJSONを1ファイルへ保存する。戻り値はない。
+ */
 function writeSingleReport(report: AnalysisReport, outFile: string) {
   const outAbs = path.resolve(outFile);
   fs.mkdirSync(path.dirname(outAbs), { recursive: true });
@@ -202,11 +242,19 @@ function writeSingleReport(report: AnalysisReport, outFile: string) {
   console.error(`Saved report to ${outAbs}`);
 }
 
+/**
+ * 入力例: `writeJson("/workspace/report/report.json", { entry: "/workspace/src/index.ts", files: [] })`
+ * 成果物: 任意オブジェクトを整形JSONで保存する。戻り値はない。
+ */
 function writeJson(filePath: string, value: unknown) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2) + "\n", "utf8");
 }
 
+/**
+ * 入力例: `toSafeFileStem("example")`
+ * 成果物: ファイル名に使える安全なスラグ文字列を返す。
+ */
 function toSafeFileStem(value: string): string {
   const normalized = value
     .trim()
@@ -216,6 +264,10 @@ function toSafeFileStem(value: string): string {
   return normalized || "unit";
 }
 
+/**
+ * 入力例: `writeDirectoryReport({ entry: "/workspace/src/index.ts", files: [] }, "/workspace/src/index.ts")`
+ * 成果物: 派生レポート一式をディレクトリ構成で保存する。
+ */
 async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
   const outDirAbs = path.resolve(outDir);
 
@@ -373,6 +425,10 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
   console.error(`Saved directory report to ${outDirAbs}`);
 }
 
+/**
+ * 入力例: `main()`
+ * 成果物: 副作用のみを実行する（戻り値なし）。
+ */
 async function main() {
   // 1st arg は node 実行パス、2nd arg はスクリプトパスなので、
   // ユーザー入力の実引数は `process.argv.slice(2)` から読む。

@@ -2,10 +2,18 @@ import { locOf } from "./locOf";
 import { SymbolInfo } from "../types/tree";
 import ts from "typescript";
 
+/**
+ * 入力例: `isSingleBit(1)`
+ * 成果物: 条件一致時に `true`、不一致時に `false` を返す。
+ */
 function isSingleBit(v: number): boolean {
   return v > 0 && (v & (v - 1)) === 0;
 }
 
+/**
+ * 入力例: `symbolFlagLabels(ts.SymbolFlags.Function)`
+ * 成果物: SymbolFlags のビット名配列を昇順で返す。
+ */
 function symbolFlagLabels(flags: ts.SymbolFlags): NonNullable<SymbolInfo["flagsLabels"]> {
   const pairs: Array<{ name: string; value: number }> = [];
 
@@ -23,6 +31,10 @@ function symbolFlagLabels(flags: ts.SymbolFlags): NonNullable<SymbolInfo["flagsL
 }
 
 // シンボル情報を取得
+/**
+ * 入力例: `symbolInfo(program.getTypeChecker(), ts.factory.createIdentifier("x"))`
+ * 成果物: シンボル名・種別・宣言位置を含む情報オブジェクトを返す。 失敗時: 条件に合わない場合は `undefined` を返す。
+ */
 export function symbolInfo(checker: ts.TypeChecker, node: ts.Node): SymbolInfo | undefined {
   // AST の形によって `getSymbolAtLocation` の当たり方が変わるため、
   // 代表的なパターンをフォールバックで吸収する。

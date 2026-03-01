@@ -60,6 +60,10 @@ type ReactRouterRelation =
       syntax?: string;
     };
 
+/**
+ * 入力例: `flattenFunctions({ entry: "/workspace/src/index.ts", files: [] })`
+ * 成果物: `{ file, fn }` のフラット配列を返す。
+ */
 function flattenFunctions(report: AnalysisReport): Array<{ file: FileReport; fn: FunctionReport }> {
   const out: Array<{ file: FileReport; fn: FunctionReport }> = [];
   for (const file of report.files) {
@@ -68,10 +72,18 @@ function flattenFunctions(report: AnalysisReport): Array<{ file: FileReport; fn:
   return out;
 }
 
+/**
+ * 入力例: `hasReactRouterImport({ file: "/workspace/src/index.ts", functions: [] })`
+ * 成果物: 条件一致時に `true`、不一致時に `false` を返す。
+ */
 function hasReactRouterImport(file: FileReport): boolean {
   return (file.imports ?? []).some((imp) => imp.source === "react-router" || imp.source === "react-router-dom" || imp.source.startsWith("react-router/"));
 }
 
+/**
+ * 入力例: `fnRole("state")`
+ * 成果物: 処理結果オブジェクトを返す。
+ */
 function fnRole(name: string): "loader" | "action" | "clientLoader" | "clientAction" | "component" | "other" {
   if (name === "loader") return "loader";
   if (name === "action") return "action";
@@ -81,6 +93,10 @@ function fnRole(name: string): "loader" | "action" | "clientLoader" | "clientAct
   return "other";
 }
 
+/**
+ * 入力例: `findRouteRoleFns({ file: "/workspace/src/index.ts", functions: [] })`
+ * 成果物: 処理結果オブジェクトを返す。
+ */
 function findRouteRoleFns(file: FileReport) {
   const byName = new Map(file.functions.map((f) => [f.name, f]));
   return {
@@ -92,15 +108,27 @@ function findRouteRoleFns(file: FileReport) {
   };
 }
 
+/**
+ * 入力例: `isCallEvent({ kind: "call", loc: { startLine: 1, startCol: 1, endLine: 1, endCol: 10 }, syntax: "redirect()", callee: "redirect", args: [] })`
+ * 成果物: 条件一致時に `true`、不一致時に `false` を返す。
+ */
 function isCallEvent(e: PEvent): e is Extract<PEvent, { kind: "call" }> {
   return e.kind === "call";
 }
+/**
+ * 入力例: `isRedirectEvent({ kind: "redirect", loc: { startLine: 1, startCol: 1, endLine: 1, endCol: 20 }, syntax: "redirect('/login')", via: "call", api: "redirect" })`
+ * 成果物: 条件一致時に `true`、不一致時に `false` を返す。
+ */
 function isRedirectEvent(e: PEvent): e is Extract<PEvent, { kind: "redirect" }> {
   return e.kind === "redirect";
 }
 
 // React Router route module に特有な依存関係を「追加レイヤー」として整理する。
 // flow(events) の AST 系情報はそのまま残し、本レポートは functionId/eventIndex 参照で結びつける。
+/**
+ * 入力例: `deriveReactRouterReport({ entry: "/workspace/src/index.ts", files: [] })`
+ * 成果物: React Router向けの routeModules/importRows/eventRows を返す。
+ */
 export function deriveReactRouterReport(report: AnalysisReport) {
   const evidence = report.files
     .flatMap((f) =>

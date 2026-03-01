@@ -49,12 +49,20 @@ export type LispauthDslWriteOptions = {
 // 例: q("AuthStarted") -> `'AuthStarted` 相当の AST ノード
 export const q = sym;
 
+/**
+ * 入力例: `buildLispauthDsl({ name: "oauth-spec", machine: { vars: [], events: [], init: [], assumptions: [] }, property: { invariants: [] } })`
+ * 成果物: draft から lispauth DSL テキストを生成して返す。
+ */
 export function buildLispauthDsl(draft: LispauthSpecDraft): string {
   return renderCommentedLispauthDsl(draft) + "\n";
 }
 
 // DSL を生成しつつ、`apps/static-analyzer/report/` (デフォルト) に保存する。
 // レビュー時に「今どの仕様を吐いたか」をファイルとして残せるよう、spec 名と timestamp をファイル名に含める。
+/**
+ * 入力例: `writeLispauthDslReport({ name: "oauth-spec", machine: { vars: [], events: [], init: [], assumptions: [] }, property: { invariants: [] } }, { reportDir: "./report" })`
+ * 成果物: DSLファイルを書き出し、`filePath/dsl` を返す。
+ */
 export function writeLispauthDslReport(draft: LispauthSpecDraft, options: LispauthDslWriteOptions = {}): LispauthDslWriteResult {
   const dsl = buildLispauthDsl(draft);
   const outDir = options.outDir ?? defaultReportDir();
@@ -68,6 +76,10 @@ export function writeLispauthDslReport(draft: LispauthSpecDraft, options: Lispau
   return { filePath, fileName, dsl };
 }
 
+/**
+ * 入力例: `buildSpecSexp({ name: "oauth-spec", machine: { vars: [], events: [], init: [], assumptions: [] }, property: { invariants: [] } })`
+ * 成果物: draft を top-level `(spec ...)` S式へ変換して返す。
+ */
 export function buildSpecSexp(draft: LispauthSpecDraft): Sexp {
   const machine: Sexp[] = [
     "machine",
@@ -100,6 +112,10 @@ export function buildSpecSexp(draft: LispauthSpecDraft): Sexp {
   return ["spec", draft.name, machine, env, property];
 }
 
+/**
+ * 入力例: `buildEventSexp(1)`
+ * 成果物: 処理結果オブジェクトを返す。
+ */
 function buildEventSexp(event: LispauthSpecDraft["machine"]["events"][number]): Sexp {
   const out: Sexp[] = ["event", event.name, (event.params ?? []).map((p) => [p.name, p.type])];
 
@@ -110,10 +126,18 @@ function buildEventSexp(event: LispauthSpecDraft["machine"]["events"][number]): 
   return out;
 }
 
+/**
+ * 入力例: `renderSexp(["spec"], 1)`
+ * 成果物: S式を整形済みDSL文字列へレンダリングして返す。
+ */
 export function renderSexp(node: Sexp, indent = 2): string {
   return renderNode(node, 0, indent);
 }
 
+/**
+ * 入力例: `renderNode(["spec"], 1, 1)`
+ * 成果物: 整形・正規化後の文字列を返す。
+ */
 function renderNode(node: Sexp, level: number, indent: number): string {
   if (Array.isArray(node)) return renderList(node, level, indent);
   if (typeof node === "string") return renderAtom(node);
@@ -123,6 +147,10 @@ function renderNode(node: Sexp, level: number, indent: number): string {
   return `'${node.name}`;
 }
 
+/**
+ * 入力例: `renderList([], 1, 1)`
+ * 成果物: 整形・正規化後の文字列を返す。
+ */
 function renderList(list: Sexp[], level: number, indent: number): string {
   if (list.length === 0) return "()";
   if (list.every(isAtomicLike)) {
@@ -146,10 +174,18 @@ function renderList(list: Sexp[], level: number, indent: number): string {
   return out;
 }
 
+/**
+ * 入力例: `isAtomicLike(["spec"])`
+ * 成果物: 条件一致時に `true`、不一致時に `false` を返す。
+ */
 function isAtomicLike(node: Sexp): boolean {
   return !Array.isArray(node);
 }
 
+/**
+ * 入力例: `renderAtom("example")`
+ * 成果物: 整形・正規化後の文字列を返す。
+ */
 function renderAtom(value: string): string {
   // DSL の識別子として安全に書けるもの以外は文字列リテラル化する。
   // `session.state`, `last.args.code`, `max-steps` などは識別子としてそのまま出す。
@@ -157,6 +193,10 @@ function renderAtom(value: string): string {
   return JSON.stringify(value);
 }
 
+/**
+ * 入力例: `defaultReportDir()`
+ * 成果物: 整形・正規化後の文字列を返す。
+ */
 function defaultReportDir(): string {
   // `builder.ts` は `src/model-checker/lispauth/` 配下にあるので、3階層上が package root。
   // そこに `report/` を作ることで、ユーザー要望の `apps/static-analyzer/report/` をデフォルトにする。
@@ -164,6 +204,10 @@ function defaultReportDir(): string {
   return path.resolve(here, "..", "..", "..", "report");
 }
 
+/**
+ * 入力例: `slugify("state")`
+ * 成果物: 整形・正規化後の文字列を返す。
+ */
 function slugify(name: string): string {
   const s = name
     .trim()
@@ -173,6 +217,10 @@ function slugify(name: string): string {
   return s || "spec";
 }
 
+/**
+ * 入力例: `formatTimestamp(new Date("2026-01-01T00:00:00Z"))`
+ * 成果物: 整形・正規化後の文字列を返す。
+ */
 function formatTimestamp(date: Date): string {
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
@@ -183,6 +231,10 @@ function formatTimestamp(date: Date): string {
   return `${yyyy}${mm}${dd}-${hh}${mi}${ss}`;
 }
 
+/**
+ * 入力例: `renderCommentedLispauthDsl({ name: "oauth-spec", machine: { vars: [], events: [], init: [], assumptions: [] }, property: { invariants: [] } })`
+ * 成果物: 説明コメント付きDSL全文を文字列で返す。
+ */
 function renderCommentedLispauthDsl(draft: LispauthSpecDraft): string {
   const lines: string[] = [];
 
@@ -299,14 +351,26 @@ function renderCommentedLispauthDsl(draft: LispauthSpecDraft): string {
   return lines.join("\n");
 }
 
+/**
+ * 入力例: `pushComment(["/a.ts", "/b.ts"], 1, "example")`
+ * 成果物: 副作用のみを実行する（戻り値なし）。
+ */
 function pushComment(lines: string[], level: number, text: string) {
   lines.push(`${" ".repeat(level * 2)}; - ${text}`);
 }
 
+/**
+ * 入力例: `pushLine(["/a.ts", "/b.ts"], 1, "example")`
+ * 成果物: 副作用のみを実行する（戻り値なし）。
+ */
 function pushLine(lines: string[], level: number, text: string) {
   lines.push(`${" ".repeat(level * 2)}${text}`);
 }
 
+/**
+ * 入力例: `pushRendered(["/a.ts", "/b.ts"], 1, ["spec"])`
+ * 成果物: 副作用のみを実行する（戻り値なし）。
+ */
 function pushRendered(lines: string[], level: number, node: Sexp) {
   const pad = " ".repeat(level * 2);
   for (const line of renderSexp(node).split("\n")) {

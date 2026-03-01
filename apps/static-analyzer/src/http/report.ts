@@ -47,6 +47,10 @@ export type HttpDerivedReport = {
   endpoints: HttpEndpointRow[];
 };
 
+/**
+ * 入力例: `flattenFunctions({ entry: "/workspace/src/index.ts", files: [] })`
+ * 成果物: `{ file, fn }` のフラット配列を返す。
+ */
 function flattenFunctions(report: AnalysisReport): Array<{ file: FileReport; fn: FunctionReport }> {
   const out: Array<{ file: FileReport; fn: FunctionReport }> = [];
   for (const file of report.files) {
@@ -55,14 +59,26 @@ function flattenFunctions(report: AnalysisReport): Array<{ file: FileReport; fn:
   return out;
 }
 
+/**
+ * 入力例: `isRedirectEvent({ kind: "redirect", loc: { startLine: 1, startCol: 1, endLine: 1, endCol: 20 }, syntax: "redirect('/login')", via: "call", api: "redirect" })`
+ * 成果物: 条件一致時に `true`、不一致時に `false` を返す。
+ */
 function isRedirectEvent(e: PEvent): e is Extract<PEvent, { kind: "redirect" }> {
   return e.kind === "redirect";
 }
 
+/**
+ * 入力例: `isUrlParamSetEvent({ kind: "urlParamSet", loc: { startLine: 1, startCol: 1, endLine: 1, endCol: 30 }, syntax: "url.searchParams.set('state', token)", url: "url", key: "\"state\"", value: "token" })`
+ * 成果物: 条件一致時に `true`、不一致時に `false` を返す。
+ */
 function isUrlParamSetEvent(e: PEvent): e is Extract<PEvent, { kind: "urlParamSet" }> {
   return e.kind === "urlParamSet";
 }
 
+/**
+ * 入力例: `normalizeHttpEndpoint("(spec (vars) (machine) (property))")`
+ * 成果物: 整形・正規化後の文字列を返す。 失敗時: 条件に合わない場合は `undefined` を返す。
+ */
 export function normalizeHttpEndpoint(raw: string): string | undefined {
   let text = raw.trim();
   text = text.replace(/^['"`]/, "").replace(/['"`]$/, "");
@@ -83,6 +99,10 @@ export function normalizeHttpEndpoint(raw: string): string | undefined {
   return text || undefined;
 }
 
+/**
+ * 入力例: `deriveHttpReport({ entry: "/workspace/src/index.ts", files: [] }, { summary: { detectedFrameworks: ["react-router"], reasons: [] }, reactRouter: undefined })`
+ * 成果物: `summary/endpoints/redirects/urlParamSets` を持つ HTTP派生レポートを返す。
+ */
 export function deriveHttpReport(
   report: AnalysisReport,
   framework: ReturnType<typeof deriveFrameworkReports>,
@@ -125,6 +145,10 @@ export function deriveHttpReport(
   const endpointMap = new Map<string, HttpEndpointRow>();
   const functionKeyByEndpoint = new Map<string, Set<string>>();
 
+  /**
+   * 入力例: `ensure("/oauth/callback?code=abc")`
+   * 成果物: 処理結果オブジェクトを返す。
+   */
   function ensure(endpoint: string): HttpEndpointRow {
     const existing = endpointMap.get(endpoint);
     if (existing) return existing;
@@ -142,6 +166,10 @@ export function deriveHttpReport(
     return created;
   }
 
+  /**
+   * 入力例: `addFunctionRef("/oauth/callback?code=abc", "/workspace/src/index.ts", "example", "state")`
+   * 成果物: 副作用のみを実行する（戻り値なし）。
+   */
   function addFunctionRef(endpoint: string, file: string, functionId: string, functionName: string) {
     const row = ensure(endpoint);
     const fnSet = functionKeyByEndpoint.get(endpoint);

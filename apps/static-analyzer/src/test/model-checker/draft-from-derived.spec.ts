@@ -12,6 +12,10 @@ const loc: Location = {
   end: { line: 1, character: 10 },
 }
 
+/**
+ * 入力例: `createReport(true)`
+ * 成果物: 処理結果オブジェクトを返す。
+ */
 function createReport(withRoleEntries: boolean): AnalysisReport {
   return {
     entry: "/repo/src/client-entry.ts",

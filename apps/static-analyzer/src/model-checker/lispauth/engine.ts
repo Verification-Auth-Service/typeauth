@@ -28,6 +28,10 @@ type ModelCheckOptions = {
 //
 // この方針は厳密な分散モデルではないが、OAuth の混線/順序崩れ/重複の初期検出には
 // コストに対して効果が高い。
+/**
+ * 入力例: `modelCheck({ vars: [], events: [], inits: [], properties: { invariants: [] } }, { maxDepth: 3 })`
+ * 成果物: 仕様の到達探索を実行し、`ok/counterexample/stats` を返す。
+ */
 export function modelCheck(spec: CompiledSpec, options: ModelCheckOptions = {}): ModelCheckResult {
   // 初期状態は spec から 1 回だけ生成する。
   // 以降の状態遷移では clone ベースで枝を増やすため、ここが探索木の根になる。
@@ -90,6 +94,10 @@ export function modelCheck(spec: CompiledSpec, options: ModelCheckOptions = {}):
   return { ok: true, explored }
 }
 
+/**
+ * 入力例: `createInitialState({ vars: [], events: [], inits: [], properties: { invariants: [] } })`
+ * 成果物: 探索開始時の runtime state（globals/sessions/trace）を返す。
+ */
 function createInitialState(spec: CompiledSpec): RuntimeState {
   // `vars` から session スコープ / global スコープを分離して初期状態を作る。
   // `session.` 接頭辞は DSL 上の名前規約であり、構文としては compile 側では解釈しない。
@@ -130,6 +138,10 @@ function createInitialState(spec: CompiledSpec): RuntimeState {
   }
 }
 
+/**
+ * 入力例: `initialValue(1)`
+ * 成果物: 処理結果オブジェクトを返す。
+ */
 function initialValue(type: CompiledSpec["vars"][number]["type"]): Value {
   // enum は先頭値をデフォルトにする。
   // 例: `(enum Start AuthStarted ...)` -> 初期値は `Start`
@@ -142,6 +154,10 @@ function initialValue(type: CompiledSpec["vars"][number]["type"]): Value {
   return ""
 }
 
+/**
+ * 入力例: `generateNextStates({ vars: [], events: [], inits: [], properties: { invariants: [] } }, { globals: {}, sessions: [], usedCodes: new Set(), trace: [] })`
+ * 成果物: 1状態から遷移可能な次状態配列を返す。
+ */
 function generateNextStates(spec: CompiledSpec, state: RuntimeState): RuntimeState[] {
   // 「配送されうる次イベント」を全列挙する。
   // 明示キューを持たないため、reorder/duplicate はこの列挙そのものが吸収する。
@@ -166,6 +182,10 @@ function generateNextStates(spec: CompiledSpec, state: RuntimeState): RuntimeSta
   return out
 }
 
+/**
+ * 入力例: `enumerateArgs({ vars: [], events: [], inits: [], properties: { invariants: [] } }, { globals: {}, sessions: [], usedCodes: new Set(), trace: [] }, { name: "Callback", params: [] }, 1)`
+ * 成果物: イベント引数の全組み合わせ配列を返す。
+ */
 function enumerateArgs(spec: CompiledSpec, state: RuntimeState, event: EventDef, targetSession: number): Array<Record<string, Value>> {
   // 引数なしイベントは空オブジェクト 1 通りだけ。
   // 「0 通り」ではなく「1 通り」にすることで直積の実装を単純に保つ。
@@ -183,6 +203,10 @@ function enumerateArgs(spec: CompiledSpec, state: RuntimeState, event: EventDef,
   })
 
   const results: Array<Record<string, Value>> = []
+  /**
+   * 入力例: `recur(1, "example")`
+   * 成果物: 副作用のみを実行する（戻り値なし）。
+   */
   const recur = (idx: number, acc: Record<string, Value>) => {
     // パラメータ列の直積を深さ優先で展開する。
     // ここは「生成順」が反例の見え方に影響するため、domains の順序をそのまま保つ。
@@ -200,6 +224,10 @@ function enumerateArgs(spec: CompiledSpec, state: RuntimeState, event: EventDef,
   return results
 }
 
+/**
+ * 入力例: `collectStringDomain({ vars: [], events: [], inits: [], properties: { invariants: [] } }, { globals: {}, sessions: [], usedCodes: new Set(), trace: [] }, 1)`
+ * 成果物: 探索用に利用する文字列ドメイン配列を返す。
+ */
 function collectStringDomain(spec: CompiledSpec, state: RuntimeState, targetSession: number): string[] {
   const set = new Set<string>()
   // seed は「攻撃者が投げがちな値」+ OAuth 例でよく出る値を入れておく。
@@ -224,6 +252,10 @@ function collectStringDomain(spec: CompiledSpec, state: RuntimeState, targetSess
   return [...set]
 }
 
+/**
+ * 入力例: `collectStringsFromValue({ key: "value" }, new Set<string>())`
+ * 成果物: 副作用のみを実行する（戻り値なし）。
+ */
 function collectStringsFromValue(v: Value, out: Set<string>) {
   // `Value` は string 以外も取り得るため、ここで string 成分だけを抽出する。
   // `set string` をサポートしているので Set の中身も再帰ではなく走査で回収する。
@@ -233,6 +265,10 @@ function collectStringsFromValue(v: Value, out: Set<string>) {
   }
 }
 
+/**
+ * 入力例: `applyEvent({ vars: [], events: [], inits: [], properties: { invariants: [] } }, { globals: {}, sessions: [], usedCodes: new Set(), trace: [] }, 1, { name: "Callback", params: [], ops: [], requireExprs: [] }, { state: "ok" })`
+ * 成果物: イベント適用後の新しい runtime state を返す。
+ */
 function applyEvent(spec: CompiledSpec, state: RuntimeState, sessionIndex: number, event: EventDef, args: Record<string, Value>): RuntimeState {
   // 1 イベント適用は純関数的に扱う (clone -> mutate -> return)。
   // BFS で複数分岐を保持するため、元状態の破壊を避ける。
@@ -277,6 +313,10 @@ function applyEvent(spec: CompiledSpec, state: RuntimeState, sessionIndex: numbe
   return next
 }
 
+/**
+ * 入力例: `cloneRuntimeState({ globals: {}, sessions: [], usedCodes: new Set(), trace: [] })`
+ * 成果物: runtime state の深いコピーを返す。
+ */
 function cloneRuntimeState(state: RuntimeState): RuntimeState {
   // `Set` を shallow copy すると枝間で共有されるので、store 単位で複製する。
   // `trace` の各要素は append 後に再変更しない前提のため、配列は shallow copy で十分。
@@ -297,6 +337,10 @@ function cloneRuntimeState(state: RuntimeState): RuntimeState {
   }
 }
 
+/**
+ * 入力例: `cloneStore({ state: "init" })`
+ * 成果物: store オブジェクトの深いコピーを返す。
+ */
 function cloneStore<T extends Record<string, Value>>(s: T): T {
   // store の値に mutable な `Set` が含まれ得るため、値単位で clone する。
   // string/number/bool/null は immutable なのでそのまま参照でよい。
@@ -307,6 +351,10 @@ function cloneStore<T extends Record<string, Value>>(s: T): T {
   return out
 }
 
+/**
+ * 入力例: `runOp(["set", "session.stage", "AuthStarted"], { globals: {}, sessions: [], usedCodes: new Set(), trace: [] }, 1, { state: "s1" })`
+ * 成果物: 副作用のみを実行する（戻り値なし）。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
+ */
 function runOp(op: Sexp, state: RuntimeState, sessionIndex: number, args: Record<string, Value>) {
   // `do` 節の副作用 DSL。
   // 最小実装では `set` と `noop` のみ対応し、それ以外は明示的に例外で落とす。
@@ -327,6 +375,10 @@ function runOp(op: Sexp, state: RuntimeState, sessionIndex: number, args: Record
   throw new Error(`Unsupported op: ${JSON.stringify(op)}`)
 }
 
+/**
+ * 入力例: `setRef("session.stage", "AuthStarted", { globals: {}, sessions: [{ stage: "Init" }], usedCodes: new Set(), trace: [] }, 1)`
+ * 成果物: 副作用のみを実行する（戻り値なし）。
+ */
 function setRef(ref: string, value: Value, state: RuntimeState, sessionIndex: number) {
   // 書き込み時も `session.` 規約でスコープを振り分ける。
   // `Set` は参照共有を避けるため再度 clone して保存する。
@@ -337,6 +389,10 @@ function setRef(ref: string, value: Value, state: RuntimeState, sessionIndex: nu
   state.globals[ref] = value instanceof Set ? new Set(value) : value
 }
 
+/**
+ * 入力例: `evalExpr(["=", "session.stage", "AuthStarted"], { globals: {}, sessions: [{ stage: "AuthStarted" }], usedCodes: new Set(), trace: [] }, 1, { state: "s1" })`
+ * 成果物: 式を評価した `Value` を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
+ */
 function evalExpr(expr: Sexp, state: RuntimeState, sessionIndex: number, args: Record<string, Value> = {}): Value {
   // property/guard 共通の式評価器。
   // 「評価可能なものを増やす」よりも、「未対応をすぐ失敗させる」ことを優先している。
@@ -382,6 +438,10 @@ function evalExpr(expr: Sexp, state: RuntimeState, sessionIndex: number, args: R
   throw new Error(`Unsupported expr: ${JSON.stringify(expr)}`)
 }
 
+/**
+ * 入力例: `readRef("session.stage", { globals: {}, sessions: [{ stage: "Init" }], usedCodes: new Set(), trace: [] }, 1, { state: "s1" })`
+ * 成果物: 参照式から読み取った値を返す。
+ */
 function readRef(ref: string, state: RuntimeState, sessionIndex: number, args: Record<string, Value>): Value {
   // DSL の参照解決優先順位:
   // 1. session.*
@@ -405,6 +465,10 @@ function readRef(ref: string, state: RuntimeState, sessionIndex: number, args: R
   return ref
 }
 
+/**
+ * 入力例: `truthy("non-empty")`
+ * 成果物: 条件一致時に `true`、不一致時に `false` を返す。
+ */
 function truthy(v: Value): boolean {
   // DSL の truthiness は JS に寄せつつ、Set だけは size ベースで明示化する。
   // (`Boolean(new Set()) === true` だが、空集合を false 扱いしたい)
@@ -412,6 +476,10 @@ function truthy(v: Value): boolean {
   return Boolean(v)
 }
 
+/**
+ * 入力例: `deepEq({ a: 1 }, { a: 1 })`
+ * 成果物: 判定結果を真偽値で返す。
+ */
 function deepEq(a: Value, b: Value): boolean {
   // `set string` のみ特別扱いし、それ以外は strict equality を使う。
   // Value に深い構造を増やす場合はここを拡張する。
@@ -425,6 +493,10 @@ function deepEq(a: Value, b: Value): boolean {
   return a === b
 }
 
+/**
+ * 入力例: `stableStateKey({ globals: { state: "s1" }, sessions: [], usedCodes: new Set(), trace: [] })`
+ * 成果物: 状態同値判定に使う安定化キー文字列を返す。
+ */
 function stableStateKey(state: RuntimeState): string {
   // BFS の枝刈り用キー。
   // `step` を含めないことで、同一状態への到達経路の違いによる探索爆発を抑える。
@@ -446,6 +518,10 @@ function stableStateKey(state: RuntimeState): string {
   })
 }
 
+/**
+ * 入力例: `storeToJson({ stage: "Init", state: "s1" })`
+ * 成果物: 内部ValueをJSON互換オブジェクトへ変換して返す。
+ */
 function storeToJson(store: Record<string, Value>): Record<string, unknown> {
   // JSON stringify 用の正規化:
   // - Set は順序非保証なので sort して配列化

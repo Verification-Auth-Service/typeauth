@@ -4,6 +4,10 @@ import { compileSpec, modelCheck } from "./model-checker/lispauth"
 
 // 最小 CLI の usage。
 // `pnpm run <script> -- ...` 前提のため、区切りの `--` を例示しておく。
+/**
+ * 入力例: `usage()`
+ * 成果物: 実行方法を複数行でまとめたヘルプ文字列を返す。
+ */
 function usage(): string {
   return [
     "Usage:",
@@ -14,6 +18,10 @@ function usage(): string {
   ].join("\n")
 }
 
+/**
+ * 入力例: `main()`
+ * 成果物: 副作用のみを実行する（戻り値なし）。
+ */
 function main() {
   // node/tsx が渡す先頭 2 要素 (`node`, scriptPath) を除外する。
   const rawArgs = process.argv.slice(2)

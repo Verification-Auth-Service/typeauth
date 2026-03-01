@@ -30,6 +30,10 @@ export type LispauthDraftUnit = {
   draft: LispauthSpecDraft
 }
 
+/**
+ * 入力例: `buildLispauthDraftFromDerivedReports({ report: { entry: "/workspace/src/index.ts", files: [] }, oauth: { redirects: [], urlParamSets: [], flows: [] }, http: { endpoints: [], redirects: [], urlParamSets: [] } })`
+ * 成果物: 派生レポートから単一 `LispauthSpecDraft` を構築して返す。
+ */
 export function buildLispauthDraftFromDerivedReports(args: BuildLispauthDraftFromDerivedReportsArgs): LispauthSpecDraft {
   const { report, framework, oauth, state } = args
 
@@ -61,6 +65,10 @@ export function buildLispauthDraftFromDerivedReports(args: BuildLispauthDraftFro
   }
 }
 
+/**
+ * 入力例: `buildLispauthDraftUnitsFromDerivedReports({ report: { entry: "/workspace/src/index.ts", files: [] }, oauth: { redirects: [], urlParamSets: [], flows: [] }, http: { endpoints: [], redirects: [], urlParamSets: [] } })`
+ * 成果物: プロジェクト単位/エンドポイント単位の draft 配列を返す。
+ */
 export function buildLispauthDraftUnitsFromDerivedReports(
   args: BuildLispauthDraftFromDerivedReportsArgs,
 ): LispauthDraftUnit[] {
@@ -70,6 +78,10 @@ export function buildLispauthDraftUnitsFromDerivedReports(
   return [...projects, ...endpoints]
 }
 
+/**
+ * 入力例: `buildSpecName({ entry: "/workspace/src/index.ts", files: [] }, { summary: { detectedFrameworks: ["react-router"], reasons: [] }, reactRouter: undefined }, { summary: { redirectCount: 1, urlParamSetCount: 2, oauthLikeFlowCount: 1 }, redirects: [], urlParamSets: [], oauthLikeFlows: [{ file: "/workspace/src/routes/callback.ts", functionName: "loader", paramKeys: ["\"state\"", "\"client_id\""], score: 2 }] })`
+ * 成果物: frameworkや関数名を反映した spec 名文字列を返す。
+ */
 function buildSpecName(
   report: AnalysisReport,
   framework: ReturnType<typeof deriveFrameworkReports>,
@@ -86,6 +98,10 @@ function buildSpecName(
   return [frameworkTag, "OAuthPKCE", (topFnBase ?? entryBase) || "entry"].filter(Boolean).join("_")
 }
 
+/**
+ * 入力例: `buildProjectUnits({ name: "OAuthPKCE_entry", machine: { vars: [], events: [], init: [], assumptions: [] }, property: { invariants: [] } }, { entry: "/workspace/src/index.ts", files: [] })`
+ * 成果物: role別 entry に対応する project unit 配列を返す。
+ */
 function buildProjectUnits(base: LispauthSpecDraft, report: AnalysisReport): LispauthDraftUnit[] {
   const roles: Array<{ role: string; entry: string }> = []
   if (report.entries?.client) roles.push({ role: "client", entry: report.entries.client })
@@ -106,6 +122,10 @@ function buildProjectUnits(base: LispauthSpecDraft, report: AnalysisReport): Lis
   }))
 }
 
+/**
+ * 入力例: `buildHttpEndpointUnits({ redirects: [], urlParamSets: [], flows: [] }, { endpoints: [], redirects: [], urlParamSets: [] })`
+ * 成果物: HTTP endpoint ごとの draft unit 配列を返す。
+ */
 function buildHttpEndpointUnits(
   base: LispauthSpecDraft,
   oauth: ReturnType<typeof deriveOauthReport>,
@@ -135,6 +155,10 @@ function buildHttpEndpointUnits(
   }))
 }
 
+/**
+ * 入力例: `normalizeEndpoint("(spec (vars) (machine) (property))")`
+ * 成果物: クエリや末尾スラッシュを除去した endpoint 文字列を返す。 失敗時: 条件に合わない場合は `undefined` を返す。
+ */
 function normalizeEndpoint(raw: string): string | undefined {
   let text = raw.trim()
   text = text.replace(/^['"`]/, "").replace(/['"`]$/, "")
@@ -158,6 +182,10 @@ function normalizeEndpoint(raw: string): string | undefined {
   return text || undefined
 }
 
+/**
+ * 入力例: `slugForSpecAtom("example")`
+ * 成果物: spec atom として安全なスラグ文字列を返す。
+ */
 function slugForSpecAtom(value: string): string {
   // DSL 識別子の見やすさを優先し、記号は `_` に寄せる。
   // `builder.renderAtom()` が最終的にはエスケープしてくれるが、
@@ -170,6 +198,10 @@ type ObservedOauthSignals = {
   hasPkce: boolean
 }
 
+/**
+ * 入力例: `inferObservedOauthSignals({ redirects: [], urlParamSets: [], flows: [] })`
+ * 成果物: 観測済み OAuth シグナル（state/pkce 等）を返す。
+ */
 function inferObservedOauthSignals(oauth: ReturnType<typeof deriveOauthReport>): ObservedOauthSignals {
   // `urlParamSets.key` は JSON 文字列として保持されている (`"state"` のような値)。
   // その仕様に合わせて比較する。
@@ -190,6 +222,10 @@ type ExplorationProfile = {
   terminalHeavy: boolean
 }
 
+/**
+ * 入力例: `inferExplorationProfile({ redirects: [], urlParamSets: [], flows: [] }, { endpoint: "/oauth/callback" })`
+ * 成果物: 探索設定プロファイル（要件フラグ）を返す。
+ */
 function inferExplorationProfile(
   oauth: ReturnType<typeof deriveOauthReport>,
   state: ReturnType<typeof deriveStateTransitionReport>,
@@ -211,6 +247,10 @@ function inferExplorationProfile(
   return { sessionCount, maxSteps, allowFlags, terminalHeavy }
 }
 
+/**
+ * 入力例: `buildDefaultOauthPkceMachine({ hasPkce: true, hasState: true, hasNonce: false, requiredParams: ["\"client_id\"", "\"redirect_uri\""] })`
+ * 成果物: PKCE想定のデフォルト状態機械定義を返す。
+ */
 function buildDefaultOauthPkceMachine(signals: ObservedOauthSignals): LispauthSpecDraft["machine"] {
   // ここで作る machine は「典型 OAuth+PKCE セッション」の抽象化テンプレート。
   // 派生レポートから event 名や状態数を厳密再構成するのではなく、
@@ -288,6 +328,10 @@ function buildDefaultOauthPkceMachine(signals: ObservedOauthSignals): LispauthSp
   }
 }
 
+/**
+ * 入力例: `buildDefaultInvariants({ hasPkce: true, hasState: true, hasNonce: false, requiredParams: ["\"client_id\""] }, { requireStateMatch: true, requirePkceOnToken: true, requireNoCodeReuse: true, includeLogoutInvariant: true })`
+ * 成果物: 検査用デフォルト不変条件配列を返す。
+ */
 function buildDefaultInvariants(
   signals: ObservedOauthSignals,
   profile: ExplorationProfile,

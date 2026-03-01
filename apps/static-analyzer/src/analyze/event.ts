@@ -9,8 +9,20 @@ import { symbolInfo } from "../helper/symbol";
  * - ブロック構造を blockEnter/blockExit で積む
  * - if/switch/loop/try/catch/finally/return/throw/await/call/new を events として保存
  */
+/**
+ * 入力例: `extractEvents(program.getTypeChecker(), ts.createSourceFile("tmp.ts", "const x = 1", ts.ScriptTarget.Latest, true), ts.factory.createIdentifier("x"), [], "state")`
+ * 成果物: 抽出済みイベント配列を返し、`out` にも同内容を追加する。
+ */
 export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: ts.Node, out: PEvent[], blockLabel?: string): PEvent[] {
+  /**
+   * 入力例: `eventBase(ts.factory.createIdentifier("x"))`
+   * 成果物: `loc/syntax` を持つイベント共通情報オブジェクトを返す。
+   */
   const eventBase = (n: ts.Node) => ({ loc: locOf(sf, n), syntax: n.getText(sf) });
+  /**
+   * 入力例: `pushRedirect(ts.factory.createIdentifier("x"), "call", "example", ts.factory.createIdentifier("x"))`
+   * 成果物: `out` に redirectイベントを追加する。戻り値はない。
+   */
   const pushRedirect = (n: ts.Node, via: "call" | "assign", api: string, targetNode?: ts.Node) => {
     let options: string | undefined;
     let headerKeys: string[] | undefined;
@@ -49,6 +61,10 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
     });
   };
 
+  /**
+   * 入力例: `redirectCallInfo(ts.factory.createCallExpression(ts.factory.createIdentifier("redirect"), undefined, [ts.factory.createStringLiteral("/login")]) as ts.CallExpression)`
+   * 成果物: redirect系 call の場合のみ `{ api, targetNode }` を返し、それ以外は `undefined`。 失敗時: 条件に合わない場合は `undefined` を返す。
+   */
   const redirectCallInfo = (
     n: ts.CallExpression
   ): { api: string; targetNode?: ts.Expression } | undefined => {
@@ -78,6 +94,10 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
     return undefined;
   };
 
+  /**
+   * 入力例: `redirectAssignInfo(ts.factory.createBinaryExpression(ts.factory.createIdentifier("location.href"), ts.factory.createToken(ts.SyntaxKind.EqualsToken), ts.factory.createStringLiteral("/login")) as ts.BinaryExpression)`
+   * 成果物: location代入による遷移なら `{ api, targetNode }` を返し、それ以外は `undefined`。 失敗時: 条件に合わない場合は `undefined` を返す。
+   */
   const redirectAssignInfo = (
     n: ts.BinaryExpression
   ): { api: string; targetNode?: ts.Expression } | undefined => {
@@ -95,6 +115,10 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
     return { api: left, targetNode: n.right };
   };
 
+  /**
+   * 入力例: `urlParamSetInfo(ts.factory.createCallExpression(ts.factory.createIdentifier("redirect"), undefined, [ts.factory.createStringLiteral("/login")]) as ts.CallExpression)`
+   * 成果物: URLSearchParams.set 呼び出しなら `{ urlExpr, keyArg, valueArg }` を返す。 失敗時: 条件に合わない場合は `undefined` を返す。
+   */
   const urlParamSetInfo = (
     n: ts.CallExpression
   ): { urlExpr: string; keyArg: ts.Expression; valueArg?: ts.Expression } | undefined => {
@@ -113,9 +137,21 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
 
   // blockEnter/blockExit を必ず対で積むため、push 処理を小関数化しておく。
   // こうしておくとイベント構造の変更時に loc/label の作り方を一箇所で直せる。
+  /**
+   * 入力例: `pushEnter("state", ts.factory.createIdentifier("x"))`
+   * 成果物: 副作用のみを実行する（戻り値なし）。
+   */
   const pushEnter = (label: string, n: ts.Node) => out.push({ kind: "blockEnter", ...eventBase(n), label });
+  /**
+   * 入力例: `pushExit("state", ts.factory.createIdentifier("x"))`
+   * 成果物: 副作用のみを実行する（戻り値なし）。
+   */
   const pushExit = (label: string, n: ts.Node) => out.push({ kind: "blockExit", ...eventBase(n), label });
 
+  /**
+   * 入力例: `visit(ts.factory.createIdentifier("x"))`
+   * 成果物: 副作用のみを実行する（戻り値なし）。
+   */
   const visit = (n: ts.Node) => {
     // 各種文に対応
 
