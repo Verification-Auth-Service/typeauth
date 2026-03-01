@@ -1,0 +1,9 @@
+{
+  "name": "typeauth",
+  "private": true,
+  "packageManager": "pnpm@10.26.0",
+  "scripts": {
+    "test": "pnpm -r test",
+    "lispauth:check": "pnpm --filter static-analyzer lispauth:check"
+  }
+}

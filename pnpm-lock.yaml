@@ -6,7 +6,7 @@ settings:
 
 importers:
 
-  .:
+  apps/static-analyzer:
     devDependencies:
       '@types/node':
         specifier: ^25.0.2
