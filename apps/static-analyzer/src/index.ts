@@ -5,9 +5,10 @@ import { stdin as input, stdout as output } from "node:process";
 import { analyze } from "./analyze/analyze";
 import type { AnalysisReport, FileReport, ImportReport } from "./types/report";
 import { deriveFrameworkReports } from "./framework/report";
-import { deriveOauthReport } from "./oauth/report";
+import { deriveHttpReport } from "./http/report";
+import { deriveOauthReportFromHttp } from "./oauth/report";
 import { writeLispauthDslReport } from "./model-checker/lispauth";
-import { buildLispauthDraftFromDerivedReports } from "./model-checker/lispauth/draft-from-derived";
+import { buildLispauthDraftFromDerivedReports, buildLispauthDraftUnitsFromDerivedReports } from "./model-checker/lispauth/draft-from-derived";
 import { deriveStateTransitionReport } from "./state/report";
 
 /**
@@ -206,6 +207,15 @@ function writeJson(filePath: string, value: unknown) {
   fs.writeFileSync(filePath, JSON.stringify(value, null, 2) + "\n", "utf8");
 }
 
+function toSafeFileStem(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || "unit";
+}
+
 async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
   const outDirAbs = path.resolve(outDir);
 
@@ -229,11 +239,13 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
   // レイヤー分離:
   // - source-derived/flow      : 既存の汎用フローレポート (ファイル/関数/events)
   // - source-derived/framework : import/package 傾向からのフレームワーク判定
-  // - source-derived/oauth     : redirect / URL param set など認可まわりの派生ビュー
+  // - source-derived/http      : flow + framework を HTTP endpoint 単位に再編したビュー
+  // - source-derived/oauth     : HTTP 派生ビューから OAuth/OIDC 観点を抽出したビュー
   const sourceDerivedDir = path.join(outDirAbs, "source-derived");
   const flowDir = path.join(sourceDerivedDir, "flow");
   const frameworkDir = path.join(sourceDerivedDir, "framework");
   const oauthDir = path.join(sourceDerivedDir, "oauth");
+  const httpDir = path.join(sourceDerivedDir, "http");
   const stateDir = path.join(outDirAbs, "state");
 
   // ファイルごとのフローレポートを、解析対象ファイル群の共通親ディレクトリを基準にミラー配置する。
@@ -274,7 +286,28 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
     writeJson(path.join(frameworkDir, `${name}.json`), payload);
   }
 
-  const oauth = deriveOauthReport(report);
+  const http = deriveHttpReport(report, framework);
+  writeJson(path.join(httpDir, "_summary.json"), http.summary);
+  writeJson(
+    path.join(httpDir, "endpoints.json"),
+    http.endpoints.map((x) => ({
+      endpoint: x.endpoint,
+      fileCount: x.files.length,
+      functionCount: x.functions.length,
+      redirectCount: x.redirects.length,
+      urlParamSetCount: x.urlParamSets.length,
+    })),
+  );
+  const usedNames = new Map<string, number>();
+  for (const row of http.endpoints) {
+    const stemBase = toSafeFileStem(row.endpoint);
+    const num = usedNames.get(stemBase) ?? 0;
+    usedNames.set(stemBase, num + 1);
+    const suffix = num === 0 ? "" : `-${num + 1}`;
+    writeJson(path.join(httpDir, `${stemBase}${suffix}.json`), row);
+  }
+
+  const oauth = deriveOauthReportFromHttp(http);
   writeJson(path.join(oauthDir, "_summary.json"), oauth.summary);
   writeJson(path.join(oauthDir, "redirects.json"), oauth.redirects);
   writeJson(path.join(oauthDir, "url-param-sets.json"), oauth.urlParamSets);
@@ -292,6 +325,24 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
   const lispauthOutDir = path.join(outDirAbs, "model-checker", "lispauth");
   const lispauthDraft = buildLispauthDraftFromDerivedReports({ report, framework, oauth, state });
   const lispauthFile = writeLispauthDslReport(lispauthDraft, { outDir: lispauthOutDir });
+  const unitDrafts = buildLispauthDraftUnitsFromDerivedReports({ report, framework, oauth, state });
+  const unitFiles = unitDrafts.map((unit) => {
+    const unitDir = unit.unitType === "project" ? path.join(lispauthOutDir, "by-project") : path.join(lispauthOutDir, "by-http-endpoint");
+    const out = writeLispauthDslReport(unit.draft, {
+      outDir: unitDir,
+      fileStem: `lispauth-${toSafeFileStem(unit.unitId)}`,
+    });
+    return {
+      unitType: unit.unitType,
+      unitId: unit.unitId,
+      label: unit.label,
+      fileName: out.fileName,
+      filePath: out.filePath,
+    };
+  });
+
+  const projectDslFiles = unitFiles.filter((x) => x.unitType === "project");
+  const endpointDslFiles = unitFiles.filter((x) => x.unitType === "http-endpoint");
   writeJson(path.join(lispauthOutDir, "_meta.json"), {
     generatedAt: new Date().toISOString(),
     sourceEntry: report.entry,
@@ -302,6 +353,21 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
     urlParamSetCount: oauth.summary.urlParamSetCount,
     stateSummary: state.summary,
     dslFile: lispauthFile.fileName,
+    byProjectDslCount: projectDslFiles.length,
+    byHttpEndpointDslCount: endpointDslFiles.length,
+    dslFiles: {
+      main: lispauthFile.fileName,
+      byProject: projectDslFiles.map((x) => ({
+        unitId: x.unitId,
+        label: x.label,
+        fileName: x.fileName,
+      })),
+      byHttpEndpoint: endpointDslFiles.map((x) => ({
+        unitId: x.unitId,
+        label: x.label,
+        fileName: x.fileName,
+      })),
+    },
   });
 
   console.error(`Saved directory report to ${outDirAbs}`);

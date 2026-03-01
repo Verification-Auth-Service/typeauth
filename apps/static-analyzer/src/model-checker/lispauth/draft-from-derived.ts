@@ -23,6 +23,13 @@ export type BuildLispauthDraftFromDerivedReportsArgs = {
   state: ReturnType<typeof deriveStateTransitionReport>
 }
 
+export type LispauthDraftUnit = {
+  unitType: "project" | "http-endpoint"
+  unitId: string
+  label: string
+  draft: LispauthSpecDraft
+}
+
 export function buildLispauthDraftFromDerivedReports(args: BuildLispauthDraftFromDerivedReportsArgs): LispauthSpecDraft {
   const { report, framework, oauth, state } = args
 
@@ -54,6 +61,15 @@ export function buildLispauthDraftFromDerivedReports(args: BuildLispauthDraftFro
   }
 }
 
+export function buildLispauthDraftUnitsFromDerivedReports(
+  args: BuildLispauthDraftFromDerivedReportsArgs,
+): LispauthDraftUnit[] {
+  const base = buildLispauthDraftFromDerivedReports(args)
+  const projects = buildProjectUnits(base, args.report)
+  const endpoints = buildHttpEndpointUnits(base, args.oauth)
+  return [...projects, ...endpoints]
+}
+
 function buildSpecName(
   report: AnalysisReport,
   framework: ReturnType<typeof deriveFrameworkReports>,
@@ -68,6 +84,78 @@ function buildSpecName(
   // - React_Router_OAuthPKCE_loader
   // - OAuthPKCE_entry
   return [frameworkTag, "OAuthPKCE", (topFnBase ?? entryBase) || "entry"].filter(Boolean).join("_")
+}
+
+function buildProjectUnits(base: LispauthSpecDraft, report: AnalysisReport): LispauthDraftUnit[] {
+  const roles: Array<{ role: string; entry: string }> = []
+  if (report.entries?.client) roles.push({ role: "client", entry: report.entries.client })
+  if (report.entries?.resourceServer) roles.push({ role: "resource-server", entry: report.entries.resourceServer })
+  if (report.entries?.tokenServer) roles.push({ role: "token-server", entry: report.entries.tokenServer })
+
+  // 役割別 entry が無い場合は単一プロジェクトとして扱う。
+  if (roles.length === 0) roles.push({ role: "entry", entry: report.entry })
+
+  return roles.map((x) => ({
+    unitType: "project" as const,
+    unitId: `project-${slugForSpecAtom(path.basename(x.entry, path.extname(x.entry))).toLowerCase() || "entry"}-${x.role}`,
+    label: `${x.role}: ${x.entry}`,
+    draft: {
+      ...base,
+      name: `${base.name}__${slugForSpecAtom(x.role)}`,
+    },
+  }))
+}
+
+function buildHttpEndpointUnits(
+  base: LispauthSpecDraft,
+  oauth: ReturnType<typeof deriveOauthReport>,
+): LispauthDraftUnit[] {
+  const candidates = new Set<string>()
+  for (const r of oauth.redirects) {
+    if (r.target) candidates.add(r.target)
+  }
+  for (const flow of oauth.oauthLikeFlows) {
+    for (const target of flow.redirectTargets) candidates.add(target)
+    candidates.add(flow.urlExpr)
+  }
+
+  const normalized = [...candidates]
+    .map(normalizeEndpoint)
+    .filter((x): x is string => !!x)
+
+  const unique = [...new Set(normalized)]
+  return unique.map((endpoint) => ({
+    unitType: "http-endpoint" as const,
+    unitId: `endpoint-${slugForSpecAtom(endpoint).toLowerCase() || "unknown"}`,
+    label: endpoint,
+    draft: {
+      ...base,
+      name: `${base.name}__${slugForSpecAtom(endpoint)}`,
+    },
+  }))
+}
+
+function normalizeEndpoint(raw: string): string | undefined {
+  let text = raw.trim()
+  text = text.replace(/^['"`]/, "").replace(/['"`]$/, "")
+  text = text.replace(/^.*?redirect\(/, "").replace(/\).*$/, "").trim()
+  text = text.replace(/\.toString\(\)/g, "")
+  if (!text) return undefined
+
+  // URL 文字列ならパス主体で揃えて endpoint 単位の重複を減らす。
+  if (/^https?:\/\//i.test(text)) {
+    try {
+      const u = new URL(text)
+      return u.pathname || "/"
+    } catch {
+      return text
+    }
+  }
+
+  // クエリは endpoint 識別に不要なので落とす。
+  const qPos = text.indexOf("?")
+  if (qPos >= 0) text = text.slice(0, qPos)
+  return text || undefined
 }
 
 function slugForSpecAtom(value: string): string {
@@ -239,4 +327,3 @@ function buildDefaultInvariants(
       : []),
   ]
 }
-
