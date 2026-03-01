@@ -3,6 +3,10 @@ import { deriveReactRouterReport } from "./react-router";
 
 export type FrameworkName = "react-router" | "remix" | "nextjs";
 
+/**
+ * 入力例: `detectFrameworkEvidence({ entry: "/workspace/src/index.ts", files: [] })`
+ * 成果物: 検出した framework 名と理由配列を返す。
+ */
 function detectFrameworkEvidence(report: AnalysisReport) {
   const byFramework: Record<FrameworkName, Array<{ file: string; source: string; syntax: string }>> = {
     "react-router": [],
@@ -30,6 +34,10 @@ function detectFrameworkEvidence(report: AnalysisReport) {
 
 // framework 別の「追加整理レイヤー」を構築する。
 // flow(AST + 汎用 events) はそのまま残し、ここではフレームワーク特有の関係性・根拠を整理する。
+/**
+ * 入力例: `deriveFrameworkReports({ entry: "/workspace/src/index.ts", files: [] })`
+ * 成果物: `summary` と framework別詳細をまとめた派生結果を返す。
+ */
 export function deriveFrameworkReports(report: AnalysisReport) {
   const evidence = detectFrameworkEvidence(report);
 

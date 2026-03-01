@@ -17,6 +17,10 @@ import { isTsLike } from "../helper/regular";
  * エントリファイルから始めて静的解析を行い、AnalysisReport を生成する
  */
 
+/**
+ * 入力例: `analyze("/workspace/src/index.ts")`
+ * 成果物: `entry/tsconfigUsed/files[]` を含む `AnalysisReport` を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
+ */
 export function analyze(entryFile: string): AnalysisReport {
   // 呼び出し元が相対パスを渡しても、以降の比較・出力を安定させるため絶対パス化する。
   const entryAbs = path.resolve(entryFile);
@@ -63,6 +67,10 @@ export function analyze(entryFile: string): AnalysisReport {
         syntax: d.getText(sf),
       }));
 
+    /**
+     * 入力例: `visitTop(ts.factory.createIdentifier("x"))`
+     * 成果物: 副作用のみを実行する（戻り値なし）。
+     */
     const visitTop = (n: ts.Node) => {
       // 「関数としてレポートする対象」かどうかを先に判定する。
       // 実際の body 解析とは分けておくことで、命名戦略や対象種類の拡張をしやすくする。

@@ -1,6 +1,10 @@
 import ts from "typescript";
 import { TypeInfo } from "../types/tree";
 
+/**
+ * 入力例: `typeInfo(program.getTypeChecker(), ts.factory.createIdentifier("x"))`
+ * 成果物: 型文字列・flags・symbol情報をまとめた `TypeInfo` を返す。 失敗時: 条件に合わない場合は `undefined` を返す。
+ */
 export function typeInfo(checker: ts.TypeChecker, node: ts.Node): TypeInfo | undefined {
   try {
     const t = checker.getTypeAtLocation(node);
