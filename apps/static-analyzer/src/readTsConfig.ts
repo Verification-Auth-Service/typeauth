@@ -3,6 +3,10 @@ import path from "node:path";
 import fs from "node:fs";
 import { errorMessageO } from "./helper/errorMessage";
 
+/**
+ * 入力例: `readTsConfigNearest("/workspace/src/index.ts")`
+ * 成果物: `configPath/options/fileNames` を含む tsconfig 解決結果を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
+ */
 export function readTsConfigNearest(entryAbs: string): { configPath?: string; options: ts.CompilerOptions; fileNames?: string[] } {
   // entry から親ディレクトリ方向へたどって、最も近い `tsconfig.json` を探す。
   // monorepo でも、対象ファイルに近い設定を優先して使えるようにする。

@@ -55,6 +55,10 @@ export type FunctionStateTransition = {
 // 既存の oauth / framework 派生レポートと同様に、
 // まずは file + function の平坦列へ正規化してから関数ごとに変換する。
 // こうしておくと後段ロジックは「単一関数のイベント列 -> 状態グラフ」に集中できる。
+/**
+ * 入力例: `flattenFunctions({ entry: "/workspace/src/index.ts", files: [] })`
+ * 成果物: `{ file, fn }` のフラット配列を返す。
+ */
 function flattenFunctions(report: AnalysisReport): Array<{ file: FileReport; fn: FunctionReport }> {
   const out: Array<{ file: FileReport; fn: FunctionReport }> = [];
   for (const file of report.files) {
@@ -73,6 +77,10 @@ function flattenFunctions(report: AnalysisReport): Array<{ file: FileReport; fn:
  * - `redirect:navigate -> "/home"`
  * - `if x > 0`
  * - `call commitSession`
+ */
+/**
+ * 入力例: `eventLabel({ kind: "call", loc: { startLine: 1, startCol: 1, endLine: 1, endCol: 10 }, syntax: "f()", callee: "f", args: [] })`
+ * 成果物: 整形・正規化後の文字列を返す。
  */
 function eventLabel(e: PEvent): string {
   switch (e.kind) {
@@ -119,12 +127,20 @@ function eventLabel(e: PEvent): string {
 // - 現在は簡易ルールとして redirect を終端扱いにしている。
 //   実コード上は redirect 呼び出し後に処理継続するパターンも理論上あり得るため、
 //   必要になれば API ごとの厳密判定 (throwing redirect / return redirect のみ等) に拡張する。
+/**
+ * 入力例: `isTerminalEvent({ kind: "return", loc: { startLine: 1, startCol: 1, endLine: 1, endCol: 10 }, syntax: "return 1" })`
+ * 成果物: 条件一致時に `true`、不一致時に `false` を返す。
+ */
 function isTerminalEvent(e: PEvent): boolean {
   return e.kind === "return" || e.kind === "throw" || e.kind === "redirect";
 }
 
 // 終端遷移のラベルはグラフ描画時に視認性が高い短い語を優先する。
 // (イベントノード側に詳細ラベルがあるため、edge には最小限を載せる)
+/**
+ * 入力例: `terminalLabel({ kind: "throw", loc: { startLine: 1, startCol: 1, endLine: 1, endCol: 15 }, syntax: "throw e" })`
+ * 成果物: 整形・正規化後の文字列を返す。 失敗時: 条件に合わない場合は `undefined` を返す。
+ */
 function terminalLabel(e: PEvent): string | undefined {
   if (e.kind === "return") return "return";
   if (e.kind === "throw") return "throw";
@@ -148,6 +164,10 @@ function terminalLabel(e: PEvent): string | undefined {
  * - `terminal` edge を追加しても、sequence edge は残す。
  *   理由は「元イベント列の連続性」を失わないため。
  *   もし描画上ノイズになる場合は、描画側で `terminal` を優先表示すればよい。
+ */
+/**
+ * 入力例: `toFunctionTransition({ file: "/workspace/src/index.ts", functions: [] }, { id: "fn1", name: "loader", kind: "function", loc: { startLine: 1, startCol: 1, endLine: 1, endCol: 10 }, events: [] })`
+ * 成果物: 1関数分の遷移グラフ（nodes/edges/summary）を返す。
  */
 function toFunctionTransition(file: FileReport, fn: FunctionReport): FunctionStateTransition {
   const startId = `${fn.id}:start`;
@@ -237,6 +257,10 @@ function toFunctionTransition(file: FileReport, fn: FunctionReport): FunctionSta
  * `files` を別に持つ理由:
  * - UI/CLI が関数本体を全ロードせず、まずファイル一覧だけ表示できる
  * - 後で分割保存 (fileごと / functionごと) に切り替える際の布石になる
+ */
+/**
+ * 入力例: `deriveStateTransitionReport({ entry: "/workspace/src/index.ts", files: [] })`
+ * 成果物: 関数ごとの状態遷移ノード/エッジ集約結果を返す。
  */
 export function deriveStateTransitionReport(report: AnalysisReport) {
   const functions = flattenFunctions(report).map(({ file, fn }) => toFunctionTransition(file, fn));

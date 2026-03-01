@@ -8,6 +8,10 @@ import { FunctionReport } from "../types/report";
 // 注意:
 // - `ts.Node` 型には `modifiers` プロパティが直接定義されていない
 // - そのため TypeScript AST の正規 API (`canHaveModifiers/getModifiers`) を使う
+/**
+ * 入力例: `hasDefaultModifier(ts.factory.createIdentifier("x"))`
+ * 成果物: 条件一致時に `true`、不一致時に `false` を返す。
+ */
 const hasDefaultModifier = (node: ts.Node): boolean =>
   (ts.canHaveModifiers(node) ? ts.getModifiers(node) : undefined)?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword) ?? false;
 
@@ -16,6 +20,10 @@ const hasDefaultModifier = (node: ts.Node): boolean =>
 // - `foo`            -> "foo"
 // - `"loader"`       -> "loader"
 // - `[someExpr]`     -> "[someExpr]" (getText の結果)
+/**
+ * 入力例: `nameOfNamedNode(ts.factory.createIdentifier("loader"))`
+ * 成果物: 整形・正規化後の文字列を返す。 失敗時: 条件に合わない場合は `undefined` を返す。
+ */
 const nameOfNamedNode = (name: ts.PropertyName | ts.BindingName): string | undefined => {
   if (ts.isIdentifier(name) || ts.isPrivateIdentifier(name)) return name.text;
   if (ts.isStringLiteralLike(name) || ts.isNumericLiteral(name)) return name.text;
@@ -32,6 +40,10 @@ const nameOfNamedNode = (name: ts.PropertyName | ts.BindingName): string | undef
 // - `export const clientLoader = (...) => {}`
 //
 // これまでは `<arrow>` のような名前になっていたが、ここで export 名を拾えるようにする。
+/**
+ * 入力例: `inferredFunctionName(ts.factory.createArrowFunction(undefined, undefined, [], undefined, ts.factory.createToken(ts.SyntaxKind.EqualsGreaterThanToken), ts.factory.createIdentifier("x")))`
+ * 成果物: 整形・正規化後の文字列を返す。 失敗時: 条件に合わない場合は `undefined` を返す。
+ */
 const inferredFunctionName = (node: ts.ArrowFunction | ts.FunctionExpression): string | undefined => {
   const p = node.parent;
 
@@ -57,6 +69,10 @@ const inferredFunctionName = (node: ts.ArrowFunction | ts.FunctionExpression): s
 };
 
 // 関数の種類を取得
+/**
+ * 入力例: `functionKind(ts.factory.createIdentifier("x"))`
+ * 成果物: ASTノードに対応する関数種別（function/method/arrow 等）を返す。 失敗時: 条件に合わない場合は `undefined` を返す。
+ */
 export function functionKind(node: ts.Node): FunctionReport["kind"] | undefined {
   if (ts.isFunctionDeclaration(node)) return "function";
   if (ts.isMethodDeclaration(node)) return "method";
@@ -67,6 +83,10 @@ export function functionKind(node: ts.Node): FunctionReport["kind"] | undefined 
 }
 
 // 関数の名前を取得
+/**
+ * 入力例: `functionName(ts.factory.createIdentifier("x"))`
+ * 成果物: ASTノードから推定した表示用関数名を返す。
+ */
 export function functionName(node: ts.Node): string {
   if (ts.isFunctionDeclaration(node)) {
     if (node.name) return node.name.text;

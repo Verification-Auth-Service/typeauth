@@ -2,10 +2,18 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { functionName } from "../helper/function";
 
+/**
+ * 入力例: `collectFunctions("const x = 1")`
+ * 成果物: 0件以上の要素を含む配列を返す。
+ */
 const collectFunctions = (code: string): ts.Node[] => {
   const sf = ts.createSourceFile("route.tsx", code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const out: ts.Node[] = [];
 
+  /**
+   * 入力例: `visit(ts.factory.createIdentifier("x"))`
+   * 成果物: 副作用のみを実行する（戻り値なし）。
+   */
   const visit = (node: ts.Node) => {
     if (
       ts.isFunctionDeclaration(node) ||
