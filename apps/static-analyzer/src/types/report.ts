@@ -26,6 +26,12 @@ export type FileReport = {
 
 export type AnalysisReport = {
   entry: string;
+  entries?: {
+    client?: string;
+    resourceServer?: string;
+    tokenServer?: string;
+  };
   tsconfigUsed?: string;
+  tsconfigUsedByEntry?: Record<string, string | undefined>;
   files: FileReport[];
 };

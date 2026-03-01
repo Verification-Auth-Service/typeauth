@@ -3,7 +3,7 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { analyze } from "./analyze/analyze";
-import type { AnalysisReport } from "./types/report";
+import type { AnalysisReport, FileReport, ImportReport } from "./types/report";
 import { deriveFrameworkReports } from "./framework/report";
 import { deriveOauthReport } from "./oauth/report";
 import { writeLispauthDslReport } from "./model-checker/lispauth";
@@ -19,42 +19,70 @@ import { deriveStateTransitionReport } from "./state/report";
  * 使い方
  * - 単一ファイル出力: `static-analyzer <entry-file.ts> [output-file.json]`
  * - ディレクトリ出力: `static-analyzer -d <entry-file.ts> [output-dir]`
+ * - 役割別エントリ: `static-analyzer --client-entry <file> --resource-entry <file> [--token-entry <file>] [output]`
  * - `-d` なし: 第3引数がなければ `report.json` に保存
  * - `-d` あり: 保存先未指定なら `report/` に保存（元コード構造をミラー）
  */
 
 // ---- CLI
 
+type EntryRoles = {
+  clientEntry?: string;
+  resourceEntry?: string;
+  tokenEntry?: string;
+};
+
 type CliArgs = {
   dirMode: boolean;
   entry?: string;
+  entries?: EntryRoles;
   outputPath?: string;
+  error?: string;
 };
 
 function parseArgs(argv: string[]): CliArgs {
-  const rest = [...argv];
   let dirMode = false;
+  const entries: EntryRoles = {};
 
-  // `-d`: 通常解析のディレクトリ出力
-  // 位置は前後どちらでも受けられるようにして、CLI 利用時のストレスを減らす。
   const positional: string[] = [];
-  for (const a of rest) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i];
     if (a === "-d") {
       dirMode = true;
       continue;
     }
+
+    if (a === "--client-entry" || a === "--resource-entry" || a === "--token-entry") {
+      const value = argv[i + 1];
+      if (!value || value.startsWith("-")) {
+        return { dirMode, error: `Missing value for ${a}` };
+      }
+      if (a === "--client-entry") entries.clientEntry = value;
+      if (a === "--resource-entry") entries.resourceEntry = value;
+      if (a === "--token-entry") entries.tokenEntry = value;
+      i += 1;
+      continue;
+    }
+
     positional.push(a);
   }
 
+  const hasRoleEntry = !!(entries.clientEntry || entries.resourceEntry || entries.tokenEntry);
   return {
     dirMode,
-    entry: positional[0],
-    outputPath: positional[1],
+    entry: hasRoleEntry ? undefined : positional[0],
+    entries: hasRoleEntry ? entries : undefined,
+    outputPath: hasRoleEntry ? positional[0] : positional[1],
   };
 }
 
 function usage(): string {
-  return ["Usage:", "  static-analyzer <entry-file.ts> [output-file.json]", "  static-analyzer -d <entry-file.ts> [output-dir]"].join("\n");
+  return [
+    "Usage:",
+    "  static-analyzer <entry-file.ts> [output-file.json]",
+    "  static-analyzer -d <entry-file.ts> [output-dir]",
+    "  static-analyzer [ -d ] --client-entry <file> --resource-entry <file> [--token-entry <file>] [output]",
+  ].join("\n");
 }
 
 async function confirmDelete(targetAbs: string): Promise<boolean> {
@@ -84,6 +112,86 @@ function commonPathPrefix(paths: string[]): string {
     if (!next.startsWith(current + path.sep)) current = path.dirname(current);
   }
   return current;
+}
+
+function uniqueNonEmpty(values: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const v of values) {
+    if (!v) continue;
+    const abs = path.resolve(v);
+    if (seen.has(abs)) continue;
+    seen.add(abs);
+    out.push(abs);
+  }
+  return out;
+}
+
+function mergeImports(base: ImportReport[] | undefined, extra: ImportReport[] | undefined): ImportReport[] | undefined {
+  const merged = new Map<string, ImportReport>();
+  for (const x of base ?? []) merged.set(`${x.source}\u0000${x.syntax}`, x);
+  for (const x of extra ?? []) merged.set(`${x.source}\u0000${x.syntax}`, x);
+  return merged.size ? [...merged.values()] : undefined;
+}
+
+function mergeFileReport(base: FileReport, extra: FileReport): FileReport {
+  const fnMap = new Map(base.functions.map((f) => [f.id, f]));
+  for (const fn of extra.functions) {
+    if (!fnMap.has(fn.id)) fnMap.set(fn.id, fn);
+  }
+  return {
+    file: base.file,
+    imports: mergeImports(base.imports, extra.imports),
+    functions: [...fnMap.values()],
+  };
+}
+
+function buildCompositeReport(entry: string, roleEntries: AnalysisReport["entries"] | undefined, reports: AnalysisReport[]): AnalysisReport {
+  const fileMap = new Map<string, FileReport>();
+  for (const r of reports) {
+    for (const f of r.files) {
+      const prev = fileMap.get(f.file);
+      fileMap.set(f.file, prev ? mergeFileReport(prev, f) : f);
+    }
+  }
+
+  const tsconfigByEntry: Record<string, string | undefined> = {};
+  for (const r of reports) tsconfigByEntry[r.entry] = r.tsconfigUsed;
+
+  return {
+    entry,
+    entries: roleEntries,
+    tsconfigUsed: tsconfigByEntry[entry],
+    tsconfigUsedByEntry: tsconfigByEntry,
+    files: [...fileMap.values()],
+  };
+}
+
+function resolveRequestedEntries(cli: CliArgs): {
+  entry: string;
+  roleEntries?: AnalysisReport["entries"];
+  analyzeTargets: string[];
+} | null {
+  if (!cli.entries) {
+    if (!cli.entry) return null;
+    const abs = path.resolve(cli.entry);
+    return { entry: abs, analyzeTargets: [abs] };
+  }
+
+  const clientEntry = cli.entries.clientEntry ? path.resolve(cli.entries.clientEntry) : undefined;
+  const resourceEntry = cli.entries.resourceEntry ? path.resolve(cli.entries.resourceEntry) : undefined;
+  const tokenEntry = cli.entries.tokenEntry ? path.resolve(cli.entries.tokenEntry) : resourceEntry;
+  if (!clientEntry || !resourceEntry) return null;
+
+  return {
+    entry: clientEntry,
+    roleEntries: {
+      client: clientEntry,
+      resourceServer: resourceEntry,
+      tokenServer: tokenEntry,
+    },
+    analyzeTargets: uniqueNonEmpty([clientEntry, resourceEntry, tokenEntry]),
+  };
 }
 
 function writeSingleReport(report: AnalysisReport, outFile: string) {
@@ -134,7 +242,13 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
   // - outDir : `report/source-derived/flow`
   // - output : `report/source-derived/flow/src/routes/a.tsx.json`
   const filePaths = report.files.map((f) => f.file);
-  const baseDir = commonPathPrefix([report.entry, ...filePaths]);
+  const baseDir = commonPathPrefix([
+    report.entry,
+    report.entries?.client,
+    report.entries?.resourceServer,
+    report.entries?.tokenServer,
+    ...filePaths,
+  ].filter((x): x is string => !!x));
 
   for (const f of report.files) {
     const rel = path.relative(baseDir, f.file);
@@ -144,7 +258,9 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
   // 互換性のためトップレベル `_meta.json` は残しつつ、source-derived/flow 配下にもメタを置く。
   const meta = {
     entry: report.entry,
+    entries: report.entries,
     tsconfigUsed: report.tsconfigUsed,
+    tsconfigUsedByEntry: report.tsconfigUsedByEntry,
     baseDir,
     files: report.files.map((f) => ({ file: f.file })),
   };
@@ -179,6 +295,7 @@ async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
   writeJson(path.join(lispauthOutDir, "_meta.json"), {
     generatedAt: new Date().toISOString(),
     sourceEntry: report.entry,
+    sourceEntries: report.entries,
     detectedFrameworks: framework.summary.detectedFrameworks,
     oauthLikeFlowCount: oauth.summary.oauthLikeFlowCount,
     redirectCount: oauth.summary.redirectCount,
@@ -194,14 +311,26 @@ async function main() {
   // 1st arg は node 実行パス、2nd arg はスクリプトパスなので、
   // ユーザー入力の実引数は `process.argv.slice(2)` から読む。
   const cli = parseArgs(process.argv.slice(2));
-  const entry = cli.entry;
-  if (!entry) {
+  if (cli.error) {
+    console.error(cli.error);
     console.error(usage());
     process.exit(2);
   }
 
-  // 解析は先に一度だけ実行し、出力形式 (単一JSON / ディレクトリ分割) を後段で分岐する。
-  const report = analyze(entry);
+  const requested = resolveRequestedEntries(cli);
+  if (!requested) {
+    console.error(usage());
+    process.exit(2);
+  }
+
+  if (cli.entries && (!cli.entries.clientEntry || !cli.entries.resourceEntry)) {
+    console.error("When using role-based entries, both --client-entry and --resource-entry are required.");
+    console.error(usage());
+    process.exit(2);
+  }
+
+  const reports = requested.analyzeTargets.map((entryPath) => analyze(entryPath));
+  const report = buildCompositeReport(requested.entry, requested.roleEntries, reports);
 
   if (cli.dirMode) {
     await writeDirectoryReport(report, cli.outputPath ?? "report");
