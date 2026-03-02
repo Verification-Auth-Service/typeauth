@@ -14,6 +14,11 @@ export type LispauthSpecDraft = {
       goto?: string
     }>
   }
+  http?: {
+    focusEndpoint?: string
+    endpoints?: string[]
+    eventEndpoints?: Array<{ event: string; endpoints: string[] }>
+  }
   env?: {
     scheduler?: string
     allow?: string[]
@@ -37,4 +42,3 @@ export type LispauthDslWriteOptions = {
   now?: Date
   fileStem?: string
 }
-

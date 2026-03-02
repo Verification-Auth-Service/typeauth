@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { deriveFrameworkReports } from "../../framework/report"
-import { buildLispauthDraftUnitsFromDerivedReports } from "../../model-checker/lispauth/generator"
+import { buildLispauthDsl } from "../../model-checker/lispauth"
+import { buildLispauthDraftFromDerivedReports, buildLispauthDraftUnitsFromDerivedReports } from "../../model-checker/lispauth/generator"
+import { q } from "../../model-checker/lispauth/generator/builder"
 import { deriveOauthReport } from "../../oauth/report"
 import { deriveStateTransitionReport } from "../../state/report"
 import type { AnalysisReport } from "../../types/report"
@@ -59,6 +61,21 @@ function createReport(withRoleEntries: boolean): AnalysisReport {
 }
 
 describe("buildLispauthDraftUnitsFromDerivedReports", () => {
+  it("projects state transitions into S-expression machine events and keeps http endpoint metadata", () => {
+    const report = createReport(false)
+    const framework = deriveFrameworkReports(report)
+    const oauth = deriveOauthReport(report)
+    const state = deriveStateTransitionReport(report)
+    const draft = buildLispauthDraftFromDerivedReports({ report, framework, oauth, state })
+    const dsl = buildLispauthDsl(draft)
+
+    expect(draft.machine.states.length).toBeGreaterThanOrEqual(2)
+    expect(draft.machine.events.some((e) => e.name.startsWith("Step_"))).toBe(true)
+    expect(draft.http?.endpoints).toContain("/oauth/callback")
+    expect(dsl).toContain("(http")
+    expect(dsl).toContain("(endpoint /oauth/callback)")
+  })
+
   it("builds project units from role-based entries", () => {
     const report = createReport(true)
     const units = buildLispauthDraftUnitsFromDerivedReports({
@@ -88,5 +105,32 @@ describe("buildLispauthDraftUnitsFromDerivedReports", () => {
     const endpointLabels = units.filter((x) => x.unitType === "http-endpoint").map((x) => x.label)
     expect(endpointLabels).toContain("/oauth/callback")
     expect(endpointLabels).toContain("authorizeUrl")
+  })
+
+  it("initializes session.state when leaving Start for state-param flows", () => {
+    const report = createReport(false)
+    const draft = buildLispauthDraftFromDerivedReports({
+      report,
+      framework: deriveFrameworkReports(report),
+      oauth: deriveOauthReport(report),
+      state: deriveStateTransitionReport(report),
+    })
+
+    const startExits = draft.machine.events.filter(
+      (event) => event.goto !== "Start" && JSON.stringify(event.when).includes(JSON.stringify(q("Start"))),
+    )
+
+    expect(startExits.length).toBeGreaterThan(0)
+    expect(
+      startExits.every((event) =>
+        (event.do ?? []).some(
+          (step) =>
+            Array.isArray(step) &&
+            step[0] === "set" &&
+            step[1] === "session.state" &&
+            JSON.stringify(step[2]) === JSON.stringify(["fresh", "state"]),
+        ),
+      ),
+    ).toBe(true)
   })
 })
