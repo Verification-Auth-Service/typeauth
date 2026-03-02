@@ -1,12 +1,16 @@
-import { isList, isSym, parseSyntax } from "./parser"
+import { isList, isSym, parseSyntax, sym } from "./parser"
 import type { SyntaxNode } from "../shared/syntax-node"
 import type { CompiledSpec, CounterexampleOptions, EventDef, InvariantDef, VarType } from "./types"
 
-// 文字列 DSL -> 検証エンジン用の内部表現へ変換する。
-// 役割は「構文木の正規化」であり、探索ロジックや意味評価は engine.ts に持ち込まない。
 /**
- * 入力例: `compileSpec("(spec (vars) (machine) (property))")`
- * 成果物: DSL ASTを model checker 用 `CompiledSpec` へ変換して返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
+ * lispauth DSL 文字列を model checker 実行用の `CompiledSpec` へ変換する。
+ *
+ * `parse` 後の構文木を正規化し、探索ロジックは `engine.ts` 側に分離する。
+ *
+ * @param source lispauth DSL テキスト。例:
+ * `(spec Mini (machine ...) (env ...) (property ...))`
+ * @returns 実行可能形式。例:
+ * `{ name: "Mini", states: [...], vars: [...], events: [...], env: {...}, properties: {...} }`
  */
 export function compileSpec(source: string): CompiledSpec {
   const root = parseSyntax(source)
@@ -28,6 +32,10 @@ export function compileSpec(source: string): CompiledSpec {
     .slice(1)
     .filter((x) => isList(x) && x[0] === "event")
     .map((e) => compileEvent(requireList(e, "event")))
+  const chainEvents = machineNode
+    .slice(1)
+    .filter((x) => isList(x) && x[0] === "chain")
+    .flatMap((chain, index) => compileChain(requireList(chain, "chain"), index))
 
   const env = compileEnv(envNode)
   const properties = compileProperties(propertyNode)
@@ -36,16 +44,12 @@ export function compileSpec(source: string): CompiledSpec {
     name: root[1],
     states,
     vars,
-    events,
+    events: [...events, ...chainEvents],
     env,
     properties,
   }
 }
 
-/**
- * 入力例: `findBlock(["spec"], "state")`
- * 成果物: 0件以上の要素を含む配列を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
- */
 function findBlock(parent: SyntaxNode, name: string): SyntaxNode[] {
   // top-level / machine / env / property は順不同で書けるように、名前検索にしている。
   if (!isList(parent)) throw new Error(`Expected list for block parent: ${name}`)
@@ -54,27 +58,21 @@ function findBlock(parent: SyntaxNode, name: string): SyntaxNode[] {
   return hit
 }
 
-/**
- * 入力例: `requireList(["spec"], "state")`
- * 成果物: 0件以上の要素を含む配列を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
- */
 function requireList(x: SyntaxNode, label: string): SyntaxNode[] {
   if (!isList(x)) throw new Error(`Expected list: ${label}`)
   return x
 }
 
-/**
- * 入力例: `asString(["spec"])`
- * 成果物: 整形・正規化後の文字列を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
- */
 function asString(x: SyntaxNode): string {
   if (typeof x !== "string") throw new Error(`Expected string atom, got ${JSON.stringify(x)}`)
   return x
 }
 
 /**
- * 入力例: `compileVar([])`
- * 成果物: 整形・正規化後の文字列を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
+ * `(varName varType)` 形式をコンパイルする。
+ *
+ * @param node 例: `["session.stage", ["enum", "Start", "Done"]]`
+ * @returns 例: `{ name: "session.stage", type: { kind: "enum", values: ["Start", "Done"] } }`
  */
 function compileVar(node: SyntaxNode[]): { name: string; type: VarType } {
   // vars は `(session.state (maybe string))` のような 2 要素形式。
@@ -84,8 +82,10 @@ function compileVar(node: SyntaxNode[]): { name: string; type: VarType } {
 }
 
 /**
- * 入力例: `compileType(["spec"])`
- * 成果物: 処理結果オブジェクトを返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
+ * DSL 型ノードを `VarType` に変換する。
+ *
+ * @param node 例: `"int"` / `["maybe", "string"]` / `["enum", "Start", "Done"]`
+ * @returns 例: `{ kind: "int" }` / `{ kind: "maybe", inner: "string" }`
  */
 function compileType(node: SyntaxNode): VarType {
   if (typeof node === "string") {
@@ -101,8 +101,10 @@ function compileType(node: SyntaxNode): VarType {
 }
 
 /**
- * 入力例: `compileEvent([])`
- * 成果物: 1イベント定義を `EventDef` 形式へコンパイルして返す。
+ * `(event ...)` ノードを `EventDef` に変換する。
+ *
+ * @param node 例: `["event", "Callback", [["code", "string"]], ["when", ...], ...]`
+ * @returns 例: `{ name, params, whenExpr, requireExprs, doOps, gotoState }`
  */
 function compileEvent(node: SyntaxNode[]): EventDef {
   // event の本文は DSL 的には宣言順をある程度自由にしている。
@@ -130,10 +132,54 @@ function compileEvent(node: SyntaxNode[]): EventDef {
   return { name, params, whenExpr, requireExprs, doOps, gotoState }
 }
 
-/**
- * 入力例: `asQuotedOrString(["spec"])`
- * 成果物: 整形・正規化後の文字列を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
- */
+function compileChain(node: SyntaxNode[], chainIndex: number): EventDef[] {
+  if (node.slice(1).every(isList)) {
+    return node.slice(1).map((segment, index) => compileNamedChainSegment(requireList(segment, "chain.segment"), chainIndex, index))
+  }
+
+  const states = node
+    .slice(1)
+    .filter((part) => part !== "->")
+    .map((part) => asQuotedOrString(part))
+  if (states.length < 2) throw new Error(`chain requires at least 2 states: ${JSON.stringify(node)}`)
+
+  const out: EventDef[] = []
+  for (let i = 0; i < states.length - 1; i += 1) {
+    const from = states[i]
+    const to = states[i + 1]
+    out.push({
+      name: `Chain${chainIndex + 1}_${i + 1}_${from}_to_${to}`,
+      params: [],
+      whenExpr: ["=", "session.stage", sym(from)],
+      requireExprs: [],
+      doOps: [["set", "session.stage", sym(to)]],
+      gotoState: to,
+    })
+  }
+
+  return out
+}
+
+function compileNamedChainSegment(node: SyntaxNode[], chainIndex: number, segmentIndex: number): EventDef {
+  if (node.length < 3) throw new Error(`chain segment requires name/from/to: ${JSON.stringify(node)}`)
+
+  const name = asString(node[0])
+  const states = node
+    .slice(1)
+    .filter((part) => part !== "->")
+    .map((part) => asQuotedOrString(part))
+  if (states.length !== 2) throw new Error(`chain segment requires exactly 2 states: ${JSON.stringify(node)}`)
+
+  return {
+    name: name || `Chain${chainIndex + 1}_${segmentIndex + 1}_${states[0]}_to_${states[1]}`,
+    params: [],
+    whenExpr: ["=", "session.stage", sym(states[0])],
+    requireExprs: [],
+    doOps: [["set", "session.stage", sym(states[1])]],
+    gotoState: states[1],
+  }
+}
+
 function asQuotedOrString(x: SyntaxNode): string {
   if (typeof x === "string") return x
   if (isSym(x)) return x.name
@@ -141,8 +187,10 @@ function asQuotedOrString(x: SyntaxNode): string {
 }
 
 /**
- * 入力例: `compileEnv([])`
- * 成果物: `op/require` ブロックを実行可能形式へ変換して返す。
+ * `(env ...)` ブロックをコンパイルする。
+ *
+ * @param node 例: `["env", ["sessions", 2], ["time", ["max-steps", 8], ["tick", 1]]]`
+ * @returns 例: `{ sessions: 2, maxSteps: 8, tick: 1, allowDuplicate: false, ... }`
  */
 function compileEnv(node: SyntaxNode[]) {
   // env は「最悪スケジューラの探索境界」を与える。
@@ -175,8 +223,10 @@ function compileEnv(node: SyntaxNode[]) {
 }
 
 /**
- * 入力例: `compileProperties([])`
- * 成果物: invariant 群を `properties.invariants` へ変換して返す。
+ * `(property ...)` ブロックをコンパイルする。
+ *
+ * @param node 例: `["property", ["invariant", "name", expr], ["counterexample", ...]]`
+ * @returns 例: `{ invariants: [{ name, expr }], counterexample: { minimizeSteps: true } }`
  */
 function compileProperties(node: SyntaxNode[]) {
   // property は将来的に safety/liveness を分けられるように独立関数化している。

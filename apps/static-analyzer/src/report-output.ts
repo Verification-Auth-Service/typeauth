@@ -5,8 +5,10 @@ import { stdin as input, stdout as output } from "node:process";
 import { deriveFrameworkReports } from "./framework/report";
 import { deriveHttpReport } from "./http/report";
 import { writeLispauthDslReport } from "./model-checker/lispauth";
-import { buildLispauthDraftFromDerivedReports, buildLispauthDraftUnitsFromDerivedReports } from "./model-checker/lispauth/generator";
+import { buildLispauthDraftFromDerivedReports } from "./model-checker/lispauth/generator";
 import { deriveOauthReportFromHttp } from "./oauth/report";
+import { buildRoleScopedReports, type ReportRole } from "./roles/report";
+import { buildReportCoverage } from "./report-coverage";
 import { deriveStateTransitionReport } from "./state/report";
 import type { AnalysisReport } from "./types/report";
 
@@ -69,6 +71,49 @@ function toSafeFileStem(value: string): string {
   return normalized || "unit";
 }
 
+function writeFrameworkReport(dir: string, report: ReturnType<typeof deriveFrameworkReports>) {
+  writeJson(path.join(dir, "_summary.json"), report.summary);
+  for (const [name, payload] of Object.entries(report.outputs)) {
+    writeJson(path.join(dir, `${name}.json`), payload);
+  }
+}
+
+function writeHttpReport(
+  dir: string,
+  report: ReturnType<typeof deriveHttpReport>,
+  options: { writeEndpointFiles?: boolean } = {},
+) {
+  writeJson(path.join(dir, "_summary.json"), report.summary);
+  writeJson(
+    path.join(dir, "endpoints.json"),
+    report.endpoints.map((x) => ({
+      endpoint: x.endpoint,
+      fileCount: x.files.length,
+      functionCount: x.functions.length,
+      redirectCount: x.redirects.length,
+      urlParamSetCount: x.urlParamSets.length,
+    })),
+  );
+  writeJson(path.join(dir, "unresolved.json"), report.unresolved);
+  if (options.writeEndpointFiles === false) return;
+
+  const usedNames = new Map<string, number>();
+  for (const row of report.endpoints) {
+    const stemBase = toSafeFileStem(row.endpoint);
+    const num = usedNames.get(stemBase) ?? 0;
+    usedNames.set(stemBase, num + 1);
+    const suffix = num === 0 ? "" : `-${num + 1}`;
+    writeJson(path.join(dir, `${stemBase}${suffix}.json`), row);
+  }
+}
+
+function writeOauthReport(dir: string, report: ReturnType<typeof deriveOauthReportFromHttp>) {
+  writeJson(path.join(dir, "_summary.json"), report.summary);
+  writeJson(path.join(dir, "redirects.json"), report.redirects);
+  writeJson(path.join(dir, "url-param-sets.json"), report.urlParamSets);
+  writeJson(path.join(dir, "flows.json"), report.oauthLikeFlows);
+}
+
 /**
  * 入力例: `writeSingleReport({ entry: "/workspace/src/index.ts", files: [] }, "/workspace/src/index.ts")`
  * 成果物: レポートJSONを1ファイルへ保存する。戻り値はない。
@@ -84,7 +129,11 @@ export function writeSingleReport(report: AnalysisReport, outFile: string) {
  * 入力例: `writeDirectoryReport({ entry: "/workspace/src/index.ts", files: [] }, "/workspace/src/index.ts")`
  * 成果物: 派生レポート一式をディレクトリ構成で保存する。
  */
-export async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
+export async function writeDirectoryReport(
+  report: AnalysisReport,
+  outDir: string,
+  options: { compactLinearTransitions?: boolean } = {},
+) {
   const outDirAbs = path.resolve(outDir);
 
   if (fs.existsSync(outDirAbs)) {
@@ -147,39 +196,48 @@ export async function writeDirectoryReport(report: AnalysisReport, outDir: strin
   writeJson(path.join(outDirAbs, "_meta.json"), meta);
   writeJson(path.join(sourceDerivedDir, "_meta.json"), meta);
   writeJson(path.join(flowDir, "_meta.json"), meta);
+  const scoped = buildRoleScopedReports(report);
 
   const framework = deriveFrameworkReports(report);
-  writeJson(path.join(frameworkDir, "_summary.json"), framework.summary);
-  for (const [name, payload] of Object.entries(framework.outputs)) {
-    writeJson(path.join(frameworkDir, `${name}.json`), payload);
-  }
+  writeFrameworkReport(frameworkDir, framework);
 
   const http = deriveHttpReport(report, framework);
-  writeJson(path.join(httpDir, "_summary.json"), http.summary);
-  writeJson(
-    path.join(httpDir, "endpoints.json"),
-    http.endpoints.map((x) => ({
-      endpoint: x.endpoint,
-      fileCount: x.files.length,
-      functionCount: x.functions.length,
-      redirectCount: x.redirects.length,
-      urlParamSetCount: x.urlParamSets.length,
-    })),
-  );
-  const usedNames = new Map<string, number>();
-  for (const row of http.endpoints) {
-    const stemBase = toSafeFileStem(row.endpoint);
-    const num = usedNames.get(stemBase) ?? 0;
-    usedNames.set(stemBase, num + 1);
-    const suffix = num === 0 ? "" : `-${num + 1}`;
-    writeJson(path.join(httpDir, `${stemBase}${suffix}.json`), row);
-  }
+  writeHttpReport(httpDir, http, { writeEndpointFiles: scoped.scopedReports.length === 0 });
 
   const oauth = deriveOauthReportFromHttp(http);
-  writeJson(path.join(oauthDir, "_summary.json"), oauth.summary);
-  writeJson(path.join(oauthDir, "redirects.json"), oauth.redirects);
-  writeJson(path.join(oauthDir, "url-param-sets.json"), oauth.urlParamSets);
-  writeJson(path.join(oauthDir, "flows.json"), oauth.oauthLikeFlows);
+  writeOauthReport(oauthDir, oauth);
+
+  const frameworkByRole: Partial<Record<ReportRole, ReturnType<typeof deriveFrameworkReports>>> = {};
+  const oauthByRole: Partial<Record<ReportRole, ReturnType<typeof deriveOauthReportFromHttp>>> = {};
+  const stateByRole: Partial<Record<ReportRole, ReturnType<typeof deriveStateTransitionReport>>> = {};
+  for (const roleScope of scoped.scopedReports) {
+    const frameworkRole = deriveFrameworkReports(roleScope.report);
+    const httpRole = deriveHttpReport(roleScope.report, frameworkRole);
+    const oauthRole = deriveOauthReportFromHttp(httpRole);
+    const stateRole = deriveStateTransitionReport(roleScope.report);
+
+    const roleFrameworkDir = path.join(frameworkDir, "by-role", roleScope.role);
+    const roleHttpDir = path.join(httpDir, "by-role", roleScope.role);
+    const roleOauthDir = path.join(oauthDir, "by-role", roleScope.role);
+    writeFrameworkReport(roleFrameworkDir, frameworkRole);
+    writeHttpReport(roleHttpDir, httpRole);
+    writeOauthReport(roleOauthDir, oauthRole);
+
+    frameworkByRole[roleScope.role] = frameworkRole;
+    oauthByRole[roleScope.role] = oauthRole;
+    stateByRole[roleScope.role] = stateRole;
+  }
+  if (scoped.scopedReports.length > 0) {
+    const byRoleMeta = scoped.scopedReports.map((x) => ({
+      role: x.role,
+      entry: x.entry,
+      fileCount: x.report.files.length,
+    }));
+    writeJson(path.join(sourceDerivedDir, "by-role", "_meta.json"), {
+      roles: byRoleMeta,
+      ownershipByFile: scoped.ownershipByFile,
+    });
+  }
 
   // `const report = analyze(entry)` の返り値をそのまま入力にして state を派生する。
   // 既にメモリ上にある `report` を使うため、flow JSON の再読込や再解析は不要。
@@ -188,29 +246,38 @@ export async function writeDirectoryReport(report: AnalysisReport, outDir: strin
   writeJson(path.join(stateDir, "files.json"), state.files);
   writeJson(path.join(stateDir, "functions.json"), state.functions);
 
+  const coverage = buildReportCoverage(report, framework, http, oauth, state);
+  writeJson(path.join(outDirAbs, "_coverage.json"), coverage);
+  writeJson(path.join(sourceDerivedDir, "_coverage.json"), coverage);
+
   // OAuth 解析結果から、lispauth モデル検査の叩き台 DSL を同梱する。
   // 固定テンプレではなく、framework/oauth/state 派生レポートを材料にドラフト化する。
   const lispauthOutDir = path.join(outDirAbs, "model-checker", "lispauth");
   const lispauthDraft = buildLispauthDraftFromDerivedReports({ report, framework, oauth, state });
-  const lispauthFile = writeLispauthDslReport(lispauthDraft, { outDir: lispauthOutDir });
-  const unitDrafts = buildLispauthDraftUnitsFromDerivedReports({ report, framework, oauth, state });
-  const unitFiles = unitDrafts.map((unit) => {
-    const unitDir = unit.unitType === "project" ? path.join(lispauthOutDir, "by-project") : path.join(lispauthOutDir, "by-http-endpoint");
-    const out = writeLispauthDslReport(unit.draft, {
-      outDir: unitDir,
-      fileStem: `lispauth-${toSafeFileStem(unit.unitId)}`,
-    });
-    return {
-      unitType: unit.unitType,
-      unitId: unit.unitId,
-      label: unit.label,
-      fileName: out.fileName,
-      filePath: out.filePath,
-    };
+  const lispauthFile = writeLispauthDslReport(lispauthDraft, {
+    outDir: lispauthOutDir,
+    compactLinearTransitions: options.compactLinearTransitions,
   });
+  const roleDslFiles: Array<{ role: ReportRole; file: string }> = [];
+  for (const roleScope of scoped.scopedReports) {
+    const frameworkRole = frameworkByRole[roleScope.role];
+    const oauthRole = oauthByRole[roleScope.role];
+    const stateRole = stateByRole[roleScope.role];
+    if (!frameworkRole || !oauthRole || !stateRole) continue;
 
-  const projectDslFiles = unitFiles.filter((x) => x.unitType === "project");
-  const endpointDslFiles = unitFiles.filter((x) => x.unitType === "http-endpoint");
+    const draft = buildLispauthDraftFromDerivedReports({
+      report: roleScope.report,
+      framework: frameworkRole,
+      oauth: oauthRole,
+      state: stateRole,
+    });
+    const file = writeLispauthDslReport(draft, {
+      outDir: path.join(lispauthOutDir, "by-role"),
+      fileStem: roleScope.role,
+      compactLinearTransitions: options.compactLinearTransitions,
+    });
+    roleDslFiles.push({ role: roleScope.role, file: path.join("by-role", file.fileName) });
+  }
   writeJson(path.join(lispauthOutDir, "_meta.json"), {
     generatedAt: new Date().toISOString(),
     sourceEntry: report.entry,
@@ -221,20 +288,15 @@ export async function writeDirectoryReport(report: AnalysisReport, outDir: strin
     urlParamSetCount: oauth.summary.urlParamSetCount,
     stateSummary: state.summary,
     dslFile: lispauthFile.fileName,
-    byProjectDslCount: projectDslFiles.length,
-    byHttpEndpointDslCount: endpointDslFiles.length,
+    unifiedDsl: true,
+    byRoleDslCount: roleDslFiles.length,
+    byProjectDslCount: 0,
+    byHttpEndpointDslCount: 0,
     dslFiles: {
       main: lispauthFile.fileName,
-      byProject: projectDslFiles.map((x) => ({
-        unitId: x.unitId,
-        label: x.label,
-        fileName: x.fileName,
-      })),
-      byHttpEndpoint: endpointDslFiles.map((x) => ({
-        unitId: x.unitId,
-        label: x.label,
-        fileName: x.fileName,
-      })),
+      byRole: roleDslFiles,
+      byProject: [],
+      byHttpEndpoint: [],
     },
   });
 

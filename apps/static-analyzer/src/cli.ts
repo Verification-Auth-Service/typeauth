@@ -12,6 +12,7 @@ export type CliArgs = {
   entry?: string;
   entries?: EntryRoles;
   outputPath?: string;
+  compactLinearTransitions?: boolean;
   error?: string;
 };
 
@@ -27,6 +28,7 @@ export type ResolvedEntries = {
  */
 export function parseArgs(argv: string[]): CliArgs {
   let dirMode = false;
+  let compactLinearTransitions: boolean | undefined;
   const entries: EntryRoles = {};
 
   const positional: string[] = [];
@@ -34,6 +36,14 @@ export function parseArgs(argv: string[]): CliArgs {
     const a = argv[i];
     if (a === "-d") {
       dirMode = true;
+      continue;
+    }
+    if (a === "--compact-linear-transitions") {
+      compactLinearTransitions = true;
+      continue;
+    }
+    if (a === "--no-compact-linear-transitions") {
+      compactLinearTransitions = false;
       continue;
     }
 
@@ -58,6 +68,7 @@ export function parseArgs(argv: string[]): CliArgs {
     entry: hasRoleEntry ? undefined : positional[0],
     entries: hasRoleEntry ? entries : undefined,
     outputPath: hasRoleEntry ? positional[0] : positional[1],
+    compactLinearTransitions,
   };
 }
 
@@ -71,6 +82,9 @@ export function usage(): string {
     "  static-analyzer <entry-file.ts> [output-file.json]",
     "  static-analyzer -d <entry-file.ts> [output-dir]",
     "  static-analyzer [ -d ] --client-entry <file> --resource-entry <file> [--token-entry <file>] [output]",
+    "Options:",
+    "  --compact-linear-transitions      Emit lispauth chain shorthand for linear transitions (default).",
+    "  --no-compact-linear-transitions   Keep expanded event blocks instead of chain shorthand.",
   ].join("\n");
 }
 

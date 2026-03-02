@@ -44,7 +44,9 @@ async function main() {
   const report = buildCompositeReport(requested.entry, requested.roleEntries, reports);
 
   if (cli.dirMode) {
-    await writeDirectoryReport(report, cli.outputPath ?? "report");
+    await writeDirectoryReport(report, cli.outputPath ?? "report", {
+      compactLinearTransitions: cli.compactLinearTransitions,
+    });
     return;
   }
 
