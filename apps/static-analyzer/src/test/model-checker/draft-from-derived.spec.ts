@@ -123,8 +123,12 @@ describe("buildLispauthDraftUnitsFromDerivedReports", () => {
     expect(startExits.length).toBeGreaterThan(0)
     expect(
       startExits.every((event) =>
-        event.do.some(
-          (step) => step[0] === "set" && step[1] === "session.state" && JSON.stringify(step[2]) === JSON.stringify(["fresh", "state"]),
+        (event.do ?? []).some(
+          (step) =>
+            Array.isArray(step) &&
+            step[0] === "set" &&
+            step[1] === "session.state" &&
+            JSON.stringify(step[2]) === JSON.stringify(["fresh", "state"]),
         ),
       ),
     ).toBe(true)
