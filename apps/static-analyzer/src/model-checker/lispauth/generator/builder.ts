@@ -5,7 +5,7 @@ import { sym } from "../shared/syntax-node"
 import type { SyntaxNode } from "../shared/syntax-node"
 import { renderCommentedLispauthDsl } from "./builder/commented-render"
 import { buildSpecSyntax as buildSpecSyntaxInternal, renderSyntax as renderSyntaxInternal } from "./builder/syntax"
-import type { LispauthDslWriteOptions, LispauthDslWriteResult, LispauthSpecDraft } from "./types"
+import type { LispauthDslBuildOptions, LispauthDslWriteOptions, LispauthDslWriteResult, LispauthSpecDraft } from "./types"
 
 export const q = sym
 
@@ -17,8 +17,8 @@ export const q = sym
  * @returns 改行終端つきの DSL 文字列。例:
  * `(spec Mini\n  (machine ... )\n)`
  */
-export function buildLispauthDsl(draft: LispauthSpecDraft): string {
-  return `${renderCommentedLispauthDsl(draft)}\n`
+export function buildLispauthDsl(draft: LispauthSpecDraft, options: LispauthDslBuildOptions = {}): string {
+  return `${renderCommentedLispauthDsl(draft, options)}\n`
 }
 
 /**
@@ -34,7 +34,7 @@ export function writeLispauthDslReport(
   draft: LispauthSpecDraft,
   options: LispauthDslWriteOptions = {},
 ): LispauthDslWriteResult {
-  const dsl = buildLispauthDsl(draft)
+  const dsl = buildLispauthDsl(draft, { compactLinearTransitions: options.compactLinearTransitions })
   const outDir = options.outDir ?? defaultReportDir()
   const fileStem = options.fileStem ?? `lispauth-${slugify(draft.name)}-${formatTimestamp(options.now ?? new Date())}`
   const fileName = `${fileStem}.lispauth`

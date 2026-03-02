@@ -1,15 +1,15 @@
 import { sym } from "../../shared/syntax-node"
 import type { SyntaxNode } from "../../shared/syntax-node"
-import type { LispauthSpecDraft } from "../types"
+import type { LispauthDslBuildOptions, LispauthSpecDraft } from "../types"
 import { renderSyntax } from "./syntax"
 
-export function renderCommentedLispauthDsl(draft: LispauthSpecDraft): string {
+export function renderCommentedLispauthDsl(draft: LispauthSpecDraft, options: LispauthDslBuildOptions = {}): string {
   const lines: string[] = []
 
   pushComment(lines, 0, "仕様定義の開始（spec 名はレビュー単位の識別子）")
   pushLine(lines, 0, `(spec ${renderAtom(draft.name)}`)
 
-  renderCommentedMachineSection(lines, draft)
+  renderCommentedMachineSection(lines, draft, options)
   renderCommentedHttpSection(lines, draft)
   renderCommentedEnvSection(lines, draft)
   renderCommentedPropertySection(lines, draft)
@@ -18,7 +18,7 @@ export function renderCommentedLispauthDsl(draft: LispauthSpecDraft): string {
   return lines.join("\n")
 }
 
-function renderCommentedMachineSection(lines: string[], draft: LispauthSpecDraft): void {
+function renderCommentedMachineSection(lines: string[], draft: LispauthSpecDraft, options: LispauthDslBuildOptions): void {
   pushComment(lines, 1, "状態機械")
   pushLine(lines, 1, "(machine")
 
@@ -33,8 +33,18 @@ function renderCommentedMachineSection(lines: string[], draft: LispauthSpecDraft
   }
   pushLine(lines, 2, ")")
 
-  for (const event of draft.machine.events) {
-    renderCommentedEvent(lines, event)
+  const compactLinearTransitions = options.compactLinearTransitions ?? true
+  if (!compactLinearTransitions) {
+    for (const event of draft.machine.events) renderCommentedEvent(lines, event)
+  } else {
+    const grouped = groupLinearEvents(draft.machine.events)
+    for (const item of grouped) {
+      if (item.kind === "chain") {
+        renderCommentedChain(lines, item.events)
+        continue
+      }
+      renderCommentedEvent(lines, item.event)
+    }
   }
 
   pushLine(lines, 1, ")")
@@ -80,6 +90,88 @@ function renderCommentedEvent(
   }
 
   pushLine(lines, 2, ")")
+}
+
+function renderCommentedChain(
+  lines: string[],
+  events: Array<LispauthSpecDraft["machine"]["events"][number]>,
+): void {
+  pushComment(lines, 2, `一本道遷移を chain で集約（${events.length} イベント）`)
+  pushLine(lines, 2, "(chain")
+  for (const event of events) {
+    const edge = asLinearStageEdge(event)
+    if (!edge) continue
+    pushRendered(lines, 3, [event.name, sym(edge.from), "->", sym(edge.to)])
+  }
+  pushLine(lines, 2, ")")
+}
+
+function groupLinearEvents(
+  events: Array<LispauthSpecDraft["machine"]["events"][number]>,
+): Array<{ kind: "single"; event: LispauthSpecDraft["machine"]["events"][number] } | { kind: "chain"; events: Array<LispauthSpecDraft["machine"]["events"][number]> }> {
+  const out: Array<
+    { kind: "single"; event: LispauthSpecDraft["machine"]["events"][number] } | { kind: "chain"; events: Array<LispauthSpecDraft["machine"]["events"][number]> }
+  > = []
+
+  let i = 0
+  while (i < events.length) {
+    const first = asLinearStageEdge(events[i])
+    if (!first) {
+      out.push({ kind: "single", event: events[i] })
+      i += 1
+      continue
+    }
+
+    const chain: Array<LispauthSpecDraft["machine"]["events"][number]> = [events[i]]
+    let prevTo = first.to
+    let j = i + 1
+    while (j < events.length) {
+      const next = asLinearStageEdge(events[j])
+      if (!next || next.from !== prevTo) break
+      chain.push(events[j])
+      prevTo = next.to
+      j += 1
+    }
+
+    if (chain.length >= 2) {
+      out.push({ kind: "chain", events: chain })
+      i = j
+      continue
+    }
+
+    out.push({ kind: "single", event: events[i] })
+    i += 1
+  }
+
+  return out
+}
+
+function asLinearStageEdge(
+  event: LispauthSpecDraft["machine"]["events"][number],
+): { from: string; to: string } | undefined {
+  if ((event.params?.length ?? 0) !== 0) return undefined
+  if ((event.require?.length ?? 0) !== 0) return undefined
+  if (!event.when || !event.do || !event.goto) return undefined
+  if (event.do.length !== 1) return undefined
+
+  const when = event.when
+  if (!Array.isArray(when) || when[0] !== "=" || when[1] !== "session.stage") return undefined
+  const from = asStateAtom(when[2])
+  if (!from) return undefined
+
+  const op = event.do[0]
+  if (!Array.isArray(op) || op[0] !== "set" || op[1] !== "session.stage") return undefined
+  const to = asStateAtom(op[2])
+  if (!to) return undefined
+  if (event.goto !== to) return undefined
+
+  return { from, to }
+}
+
+function asStateAtom(node: SyntaxNode): string | undefined {
+  if (typeof node === "string") return node
+  if (node && typeof node === "object" && "name" in node && typeof node.name === "string") return node.name
+  return undefined
 }
 
 function renderCommentedHttpSection(lines: string[], draft: LispauthSpecDraft): void {

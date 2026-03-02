@@ -240,16 +240,21 @@ export function deriveOauthReportFromHttp(http: HttpDerivedReport): OauthReport 
   const redirects = new Map<string, OauthRedirectRow>();
   const urlParamSets = new Map<string, OauthUrlParamSetRow>();
 
+  const addRedirect = (r: HttpRedirectRow) => {
+    const key = `${r.file}::${r.functionId}::${r.eventIndex}::${r.api}::${r.target ?? ""}`;
+    if (!redirects.has(key)) redirects.set(key, mapHttpRedirectToOauth(r));
+  };
+  const addParamSet = (s: HttpUrlParamSetRow) => {
+    const key = `${s.file}::${s.functionId}::${s.eventIndex}::${s.urlExpr}::${s.key}`;
+    if (!urlParamSets.has(key)) urlParamSets.set(key, mapHttpParamSetToOauth(s));
+  };
+
   for (const endpoint of http.endpoints) {
-    for (const r of endpoint.redirects) {
-      const key = `${r.file}::${r.functionId}::${r.eventIndex}::${r.api}::${r.target ?? ""}`;
-      if (!redirects.has(key)) redirects.set(key, mapHttpRedirectToOauth(r));
-    }
-    for (const s of endpoint.urlParamSets) {
-      const key = `${s.file}::${s.functionId}::${s.eventIndex}::${s.urlExpr}::${s.key}`;
-      if (!urlParamSets.has(key)) urlParamSets.set(key, mapHttpParamSetToOauth(s));
-    }
+    for (const r of endpoint.redirects) addRedirect(r);
+    for (const s of endpoint.urlParamSets) addParamSet(s);
   }
+  for (const r of http.unresolved?.redirects ?? []) addRedirect(r);
+  for (const s of http.unresolved?.urlParamSets ?? []) addParamSet(s);
 
   return toOauthReport([...redirects.values()], [...urlParamSets.values()]);
 }

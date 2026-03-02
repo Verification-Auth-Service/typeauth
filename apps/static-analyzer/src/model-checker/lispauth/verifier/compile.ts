@@ -1,4 +1,4 @@
-import { isList, isSym, parseSyntax } from "./parser"
+import { isList, isSym, parseSyntax, sym } from "./parser"
 import type { SyntaxNode } from "../shared/syntax-node"
 import type { CompiledSpec, CounterexampleOptions, EventDef, InvariantDef, VarType } from "./types"
 
@@ -32,6 +32,10 @@ export function compileSpec(source: string): CompiledSpec {
     .slice(1)
     .filter((x) => isList(x) && x[0] === "event")
     .map((e) => compileEvent(requireList(e, "event")))
+  const chainEvents = machineNode
+    .slice(1)
+    .filter((x) => isList(x) && x[0] === "chain")
+    .flatMap((chain, index) => compileChain(requireList(chain, "chain"), index))
 
   const env = compileEnv(envNode)
   const properties = compileProperties(propertyNode)
@@ -40,7 +44,7 @@ export function compileSpec(source: string): CompiledSpec {
     name: root[1],
     states,
     vars,
-    events,
+    events: [...events, ...chainEvents],
     env,
     properties,
   }
@@ -126,6 +130,54 @@ function compileEvent(node: SyntaxNode[]): EventDef {
   }
 
   return { name, params, whenExpr, requireExprs, doOps, gotoState }
+}
+
+function compileChain(node: SyntaxNode[], chainIndex: number): EventDef[] {
+  if (node.slice(1).every(isList)) {
+    return node.slice(1).map((segment, index) => compileNamedChainSegment(requireList(segment, "chain.segment"), chainIndex, index))
+  }
+
+  const states = node
+    .slice(1)
+    .filter((part) => part !== "->")
+    .map((part) => asQuotedOrString(part))
+  if (states.length < 2) throw new Error(`chain requires at least 2 states: ${JSON.stringify(node)}`)
+
+  const out: EventDef[] = []
+  for (let i = 0; i < states.length - 1; i += 1) {
+    const from = states[i]
+    const to = states[i + 1]
+    out.push({
+      name: `Chain${chainIndex + 1}_${i + 1}_${from}_to_${to}`,
+      params: [],
+      whenExpr: ["=", "session.stage", sym(from)],
+      requireExprs: [],
+      doOps: [["set", "session.stage", sym(to)]],
+      gotoState: to,
+    })
+  }
+
+  return out
+}
+
+function compileNamedChainSegment(node: SyntaxNode[], chainIndex: number, segmentIndex: number): EventDef {
+  if (node.length < 3) throw new Error(`chain segment requires name/from/to: ${JSON.stringify(node)}`)
+
+  const name = asString(node[0])
+  const states = node
+    .slice(1)
+    .filter((part) => part !== "->")
+    .map((part) => asQuotedOrString(part))
+  if (states.length !== 2) throw new Error(`chain segment requires exactly 2 states: ${JSON.stringify(node)}`)
+
+  return {
+    name: name || `Chain${chainIndex + 1}_${segmentIndex + 1}_${states[0]}_to_${states[1]}`,
+    params: [],
+    whenExpr: ["=", "session.stage", sym(states[0])],
+    requireExprs: [],
+    doOps: [["set", "session.stage", sym(states[1])]],
+    gotoState: states[1],
+  }
 }
 
 function asQuotedOrString(x: SyntaxNode): string {

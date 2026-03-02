@@ -80,6 +80,111 @@ function hasReactRouterImport(file: FileReport): boolean {
   return (file.imports ?? []).some((imp) => imp.source === "react-router" || imp.source === "react-router-dom" || imp.source.startsWith("react-router/"));
 }
 
+function isLikelyTestFile(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, "/");
+  return normalized.includes("/__tests__/") || /\.spec\.[cm]?[jt]sx?$/i.test(normalized) || /\.test\.[cm]?[jt]sx?$/i.test(normalized);
+}
+
+function functionKey(file: string, functionId: string): string {
+  return `${file}::${functionId}`;
+}
+
+function splitSegmentPartsPreservingEscapedDots(segment: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let idx = 0;
+
+  while (idx < segment.length) {
+    const ch = segment[idx];
+    if (ch === "[") {
+      const end = segment.indexOf("]", idx + 1);
+      if (end < 0) {
+        current += ch;
+        idx += 1;
+        continue;
+      }
+      current += segment.slice(idx + 1, end);
+      idx = end + 1;
+      continue;
+    }
+    if (ch === ".") {
+      parts.push(current);
+      current = "";
+      idx += 1;
+      continue;
+    }
+    current += ch;
+    idx += 1;
+  }
+
+  parts.push(current);
+  return parts;
+}
+
+function normalizeRouteSegmentPart(part: string): string | undefined {
+  if (!part || part === "index" || part === "_index") return undefined;
+  if (part.startsWith("_")) return undefined;
+  if (part === "$") return "*";
+  if (!part.startsWith("$")) return part;
+  const paramName = part.slice(1);
+  return paramName ? `:${paramName}` : "*";
+}
+
+/**
+ * 入力例: `reactRouterRoutePathFromFile("/workspace/app/routes/oauth.authorize.tsx")`
+ * 成果物: React Router route module ファイルパスから endpoint (`/oauth/authorize`) を返す。 失敗時: 条件に合わない場合は `undefined` を返す。
+ */
+export function reactRouterRoutePathFromFile(filePath: string): string | undefined {
+  const normalized = filePath.replace(/\\/g, "/");
+  const marker = "/routes/";
+  const markerPos = normalized.lastIndexOf(marker);
+  if (markerPos < 0) return undefined;
+
+  const relative = normalized.slice(markerPos + marker.length).replace(/\.[cm]?[jt]sx?$/i, "");
+  if (!relative) return undefined;
+
+  const pathParts: string[] = [];
+  for (const rawSeg of relative.split("/")) {
+    if (!rawSeg) continue;
+    const seg = rawSeg.replace(/\++$/g, "");
+    if (!seg || seg === "index" || seg === "_index") continue;
+
+    for (const dotPart of splitSegmentPartsPreservingEscapedDots(seg)) {
+      const normalizedPart = normalizeRouteSegmentPart(dotPart);
+      if (normalizedPart) pathParts.push(normalizedPart);
+    }
+  }
+
+  return pathParts.length === 0 ? "/" : `/${pathParts.join("/")}`;
+}
+
+/**
+ * 入力例: `deriveReactRouterFunctionEndpoints({ entry: "/workspace/src/index.ts", files: [] })`
+ * 成果物: `file::functionId` を key とした endpoint 一覧のマップを返す。
+ */
+export function deriveReactRouterFunctionEndpoints(report: AnalysisReport): Map<string, string[]> {
+  const out = new Map<string, Set<string>>();
+
+  for (const file of report.files) {
+    if (isLikelyTestFile(file.file)) continue;
+    const endpoint = reactRouterRoutePathFromFile(file.file);
+    if (!endpoint) continue;
+
+    for (const fn of file.functions) {
+      const key = functionKey(file.file, fn.id);
+      const current = out.get(key) ?? new Set<string>();
+      current.add(endpoint);
+      out.set(key, current);
+    }
+  }
+
+  const resolved = new Map<string, string[]>();
+  for (const [key, endpoints] of out.entries()) {
+    resolved.set(key, [...endpoints].sort());
+  }
+  return resolved;
+}
+
 /**
  * 入力例: `fnRole("state")`
  * 成果物: 処理結果オブジェクトを返す。

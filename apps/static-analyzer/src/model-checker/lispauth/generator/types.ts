@@ -37,8 +37,13 @@ export type LispauthDslWriteResult = {
   dsl: string
 }
 
+export type LispauthDslBuildOptions = {
+  compactLinearTransitions?: boolean
+}
+
 export type LispauthDslWriteOptions = {
   outDir?: string
   now?: Date
   fileStem?: string
+  compactLinearTransitions?: boolean
 }

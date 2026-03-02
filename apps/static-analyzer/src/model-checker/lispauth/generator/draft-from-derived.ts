@@ -1,4 +1,5 @@
 import type { LispauthSpecDraft } from "./types"
+import { resolveFrameworkHttpEndpoints } from "../../../framework/http-endpoint"
 import {
   type BuildLispauthDraftFromDerivedReportsArgs,
   type LispauthDraftUnit,
@@ -33,13 +34,16 @@ export function buildLispauthDraftFromDerivedReports(args: BuildLispauthDraftFro
   const observedSignals = inferObservedOauthSignals(oauth)
   const explorationProfile = inferExplorationProfile(oauth, state)
   const endpointCatalog = buildEndpointCatalog(oauth)
-  const machineResult = buildMachineFromStateTransitions(state, oauth, observedSignals)
+  const frameworkEndpointByFunction = resolveFrameworkHttpEndpoints(report, framework)
+  const machineResult = buildMachineFromStateTransitions(state, oauth, observedSignals, frameworkEndpointByFunction)
+  const frameworkEndpoints = [...new Set([...frameworkEndpointByFunction.values()].flat())].sort()
+  const mergedEndpoints = [...new Set([...endpointCatalog.endpoints, ...frameworkEndpoints])].sort()
 
   return {
     name: specName,
     machine: machineResult.machine,
     http: {
-      endpoints: endpointCatalog.endpoints,
+      endpoints: mergedEndpoints,
       eventEndpoints: machineResult.eventEndpoints,
     },
     env: {
@@ -67,6 +71,6 @@ export function buildLispauthDraftUnitsFromDerivedReports(
 ): LispauthDraftUnit[] {
   const base = buildLispauthDraftFromDerivedReports(args)
   const projects = buildProjectUnits(base, args.report)
-  const endpoints = buildHttpEndpointUnits(base, args.oauth)
+  const endpoints = buildHttpEndpointUnits(base)
   return [...projects, ...endpoints]
 }

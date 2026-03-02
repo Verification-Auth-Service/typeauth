@@ -4,5 +4,4 @@ export type {
   BuildLispauthDraftFromDerivedReportsArgs,
   LispauthDraftUnit,
 } from "./draft-from-derived"
-export type { LispauthDslWriteOptions, LispauthDslWriteResult, LispauthSpecDraft } from "./types"
-
+export type { LispauthDslBuildOptions, LispauthDslWriteOptions, LispauthDslWriteResult, LispauthSpecDraft } from "./types"

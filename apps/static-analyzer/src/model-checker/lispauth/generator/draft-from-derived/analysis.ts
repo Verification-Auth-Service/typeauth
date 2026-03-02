@@ -2,7 +2,7 @@ import { q } from "../builder"
 import type { SyntaxNode } from "../../shared/syntax-node"
 import type { LispauthSpecDraft } from "../types"
 import type { OauthReport, StateReport } from "./context"
-import { normalizeEndpoint } from "./naming"
+import { resolveOauthEndpoints } from "./endpoint-resolver"
 
 export type ObservedOauthSignals = {
   hasStateParam: boolean
@@ -28,27 +28,7 @@ export function inferObservedOauthSignals(oauth: OauthReport): ObservedOauthSign
 }
 
 export function buildEndpointCatalog(oauth: OauthReport): { endpoints: string[] } {
-  const endpoints = new Set<string>()
-
-  for (const redirect of oauth.redirects) {
-    if (!redirect.target) continue
-    const endpoint = normalizeEndpoint(redirect.target)
-    if (endpoint) endpoints.add(endpoint)
-  }
-  for (const paramSet of oauth.urlParamSets) {
-    const endpoint = normalizeEndpoint(paramSet.urlExpr)
-    if (endpoint) endpoints.add(endpoint)
-  }
-  for (const flow of oauth.oauthLikeFlows) {
-    const direct = normalizeEndpoint(flow.urlExpr)
-    if (direct) endpoints.add(direct)
-    for (const target of flow.redirectTargets) {
-      const endpoint = normalizeEndpoint(target)
-      if (endpoint) endpoints.add(endpoint)
-    }
-  }
-
-  return { endpoints: [...endpoints].sort() }
+  return { endpoints: resolveOauthEndpoints(oauth).catalog }
 }
 
 export function inferExplorationProfile(oauth: OauthReport, state: StateReport): ExplorationProfile {
