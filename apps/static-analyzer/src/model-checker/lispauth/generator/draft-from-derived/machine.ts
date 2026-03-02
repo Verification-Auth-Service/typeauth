@@ -58,7 +58,12 @@ export function buildMachineFromStateTransitions(
       name: eventName,
       params: [],
       when: ["=", "session.stage", q(fromState)],
-      do: [["set", "session.stage", q(toState)]],
+      do: [
+        ...(signals.hasStateParam && fromState === "Start" && toState !== "Start"
+          ? [["set", "session.state", ["fresh", "state"]]]
+          : []),
+        ["set", "session.stage", q(toState)],
+      ],
       goto: toState,
     })
 
@@ -76,7 +81,12 @@ export function buildMachineFromStateTransitions(
         name: "Step_Start_to_End",
         params: [],
         when: ["=", "session.stage", q(startState)],
-        do: [["set", "session.stage", q(endState)]],
+        do: [
+          ...(signals.hasStateParam && startState === "Start" && endState !== "Start"
+            ? [["set", "session.state", ["fresh", "state"]]]
+            : []),
+          ["set", "session.stage", q(endState)],
+        ],
         goto: endState,
       })
     }

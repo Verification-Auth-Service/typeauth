@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { deriveFrameworkReports } from "../../framework/report"
 import { buildLispauthDsl } from "../../model-checker/lispauth"
 import { buildLispauthDraftFromDerivedReports, buildLispauthDraftUnitsFromDerivedReports } from "../../model-checker/lispauth/generator"
+import { q } from "../../model-checker/lispauth/generator/builder"
 import { deriveOauthReport } from "../../oauth/report"
 import { deriveStateTransitionReport } from "../../state/report"
 import type { AnalysisReport } from "../../types/report"
@@ -104,5 +105,28 @@ describe("buildLispauthDraftUnitsFromDerivedReports", () => {
     const endpointLabels = units.filter((x) => x.unitType === "http-endpoint").map((x) => x.label)
     expect(endpointLabels).toContain("/oauth/callback")
     expect(endpointLabels).toContain("authorizeUrl")
+  })
+
+  it("initializes session.state when leaving Start for state-param flows", () => {
+    const report = createReport(false)
+    const draft = buildLispauthDraftFromDerivedReports({
+      report,
+      framework: deriveFrameworkReports(report),
+      oauth: deriveOauthReport(report),
+      state: deriveStateTransitionReport(report),
+    })
+
+    const startExits = draft.machine.events.filter(
+      (event) => event.goto !== "Start" && JSON.stringify(event.when).includes(JSON.stringify(q("Start"))),
+    )
+
+    expect(startExits.length).toBeGreaterThan(0)
+    expect(
+      startExits.every((event) =>
+        event.do.some(
+          (step) => step[0] === "set" && step[1] === "session.state" && JSON.stringify(step[2]) === JSON.stringify(["fresh", "state"]),
+        ),
+      ),
+    ).toBe(true)
   })
 })
