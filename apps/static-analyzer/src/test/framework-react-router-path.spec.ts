@@ -10,4 +10,8 @@ describe("reactRouterRoutePathFromFile", () => {
     expect(reactRouterRoutePathFromFile("/repo/app/routes/posts.$id.tsx")).toBe("/posts/:id");
     expect(reactRouterRoutePathFromFile("/repo/app/routes/_auth.login.tsx")).toBe("/login");
   });
+
+  it("preserves escaped dot literals in route segments", () => {
+    expect(reactRouterRoutePathFromFile("/repo/app/routes/sitemap[.]xml.tsx")).toBe("/sitemap.xml");
+  });
 });

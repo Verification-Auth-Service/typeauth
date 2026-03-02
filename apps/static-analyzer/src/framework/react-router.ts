@@ -89,8 +89,36 @@ function functionKey(file: string, functionId: string): string {
   return `${file}::${functionId}`;
 }
 
-function decodeBracketEscapes(segment: string): string {
-  return segment.replace(/\[([^\]]+)\]/g, "$1");
+function splitSegmentPartsPreservingEscapedDots(segment: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let idx = 0;
+
+  while (idx < segment.length) {
+    const ch = segment[idx];
+    if (ch === "[") {
+      const end = segment.indexOf("]", idx + 1);
+      if (end < 0) {
+        current += ch;
+        idx += 1;
+        continue;
+      }
+      current += segment.slice(idx + 1, end);
+      idx = end + 1;
+      continue;
+    }
+    if (ch === ".") {
+      parts.push(current);
+      current = "";
+      idx += 1;
+      continue;
+    }
+    current += ch;
+    idx += 1;
+  }
+
+  parts.push(current);
+  return parts;
 }
 
 function normalizeRouteSegmentPart(part: string): string | undefined {
@@ -118,10 +146,10 @@ export function reactRouterRoutePathFromFile(filePath: string): string | undefin
   const pathParts: string[] = [];
   for (const rawSeg of relative.split("/")) {
     if (!rawSeg) continue;
-    const seg = decodeBracketEscapes(rawSeg).replace(/\++$/g, "");
+    const seg = rawSeg.replace(/\++$/g, "");
     if (!seg || seg === "index" || seg === "_index") continue;
 
-    for (const dotPart of seg.split(".")) {
+    for (const dotPart of splitSegmentPartsPreservingEscapedDots(seg)) {
       const normalizedPart = normalizeRouteSegmentPart(dotPart);
       if (normalizedPart) pathParts.push(normalizedPart);
     }
