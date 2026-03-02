@@ -8,6 +8,7 @@ export type { SyntaxNode } from "./shared/syntax-node"
 export type { CompiledSpec, ModelCheckResult, TraceStep } from "./verifier/types"
 export type {
   BuildLispauthDraftFromDerivedReportsArgs,
+  LispauthDslBuildOptions,
   LispauthDraftUnit,
   LispauthDslWriteOptions,
   LispauthDslWriteResult,

@@ -155,6 +155,50 @@ describe("lispauth public API: parser / renderer / compiler / engine", () => {
 `),
       ).toThrow("Invalid type")
     })
+
+    it("supports chain shorthand for linear state transitions", () => {
+      const spec = compileSpec(`
+(spec Chained
+  (machine
+    (states Start AuthStarted TokenIssued)
+    (vars (session.stage (enum Start AuthStarted TokenIssued)) (now int))
+    (chain 'Start -> 'AuthStarted -> 'TokenIssued))
+  (env (sessions 1) (time (max-steps 2) (tick 1)))
+  (property))
+`)
+
+      expect(spec.events.map((event) => event.name)).toEqual([
+        "Chain1_1_Start_to_AuthStarted",
+        "Chain1_2_AuthStarted_to_TokenIssued",
+      ])
+      expect(spec.events[0]).toMatchObject({
+        gotoState: "AuthStarted",
+        doOps: [["set", "session.stage", q("AuthStarted")]],
+      })
+      expect(spec.events[1]).toMatchObject({
+        gotoState: "TokenIssued",
+      })
+    })
+
+    it("supports named chain segments to preserve event names", () => {
+      const spec = compileSpec(`
+(spec ChainedNamed
+  (machine
+    (states Start Mid Done)
+    (vars (session.stage (enum Start Mid Done)) (now int))
+    (chain
+      (Step_Start_to_Mid 'Start -> 'Mid)
+      (Step_Mid_to_Done 'Mid -> 'Done)))
+  (env (sessions 1) (time (max-steps 2) (tick 1)))
+  (property
+    (invariant last-event-known
+      (or (= last.event 'Step_Start_to_Mid) (= last.event 'Step_Mid_to_Done)))))
+`)
+
+      expect(spec.events.map((event) => event.name)).toEqual(["Step_Start_to_Mid", "Step_Mid_to_Done"])
+      expect(spec.events[0]).toMatchObject({ gotoState: "Mid" })
+      expect(spec.events[1]).toMatchObject({ gotoState: "Done" })
+    })
   })
 
   describe("modelCheck(compiled) => ModelCheckResult", () => {
@@ -251,6 +295,74 @@ describe("lispauth public API: parser / renderer / compiler / engine", () => {
       const compiled = compileSpec(dsl)
       expect(compiled.name).toBe("RoundTrip")
       expect(compiled.events.map((event) => event.name)).toEqual(["Finish"])
+    })
+
+    it("renders contiguous linear events as chain while keeping names", () => {
+      const dsl = buildLispauthDsl({
+        name: "ChainRender",
+        machine: {
+          states: ["S33", "S34", "S35"],
+          vars: [{ name: "session.stage", type: ["enum", "S33", "S34", "S35"] }],
+          events: [
+            {
+              name: "Step_S33_to_S34",
+              when: ["=", "session.stage", q("S33")],
+              do: [["set", "session.stage", q("S34")]],
+              goto: "S34",
+            },
+            {
+              name: "Step_S34_to_S35",
+              when: ["=", "session.stage", q("S34")],
+              do: [["set", "session.stage", q("S35")]],
+              goto: "S35",
+            },
+          ],
+        },
+        env: { sessions: 1, time: { maxSteps: 2, tick: 1 } },
+        property: {
+          invariants: [{ name: "last-event", expr: ["or", ["=", "last.event", q("Step_S33_to_S34")], ["=", "last.event", q("Step_S34_to_S35")]] }],
+        },
+      })
+
+      expect(dsl).toContain("(chain")
+      expect(dsl).toContain("(Step_S33_to_S34 'S33 -> 'S34)")
+      expect(dsl).toContain("(Step_S34_to_S35 'S34 -> 'S35)")
+
+      const compiled = compileSpec(dsl)
+      expect(compiled.events.map((event) => event.name)).toEqual(["Step_S33_to_S34", "Step_S34_to_S35"])
+    })
+
+    it("can disable chain compaction via option", () => {
+      const dsl = buildLispauthDsl(
+        {
+          name: "ChainRenderOff",
+          machine: {
+            states: ["S33", "S34", "S35"],
+            vars: [{ name: "session.stage", type: ["enum", "S33", "S34", "S35"] }],
+            events: [
+              {
+                name: "Step_S33_to_S34",
+                when: ["=", "session.stage", q("S33")],
+                do: [["set", "session.stage", q("S34")]],
+                goto: "S34",
+              },
+              {
+                name: "Step_S34_to_S35",
+                when: ["=", "session.stage", q("S34")],
+                do: [["set", "session.stage", q("S35")]],
+                goto: "S35",
+              },
+            ],
+          },
+          env: { sessions: 1, time: { maxSteps: 2, tick: 1 } },
+          property: {},
+        },
+        { compactLinearTransitions: false },
+      )
+
+      expect(dsl).not.toContain("(chain")
+      expect(dsl).toContain("(event Step_S33_to_S34")
+      expect(dsl).toContain("(event Step_S34_to_S35")
     })
   })
 })

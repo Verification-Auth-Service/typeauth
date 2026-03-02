@@ -129,7 +129,11 @@ export function writeSingleReport(report: AnalysisReport, outFile: string) {
  * 入力例: `writeDirectoryReport({ entry: "/workspace/src/index.ts", files: [] }, "/workspace/src/index.ts")`
  * 成果物: 派生レポート一式をディレクトリ構成で保存する。
  */
-export async function writeDirectoryReport(report: AnalysisReport, outDir: string) {
+export async function writeDirectoryReport(
+  report: AnalysisReport,
+  outDir: string,
+  options: { compactLinearTransitions?: boolean } = {},
+) {
   const outDirAbs = path.resolve(outDir);
 
   if (fs.existsSync(outDirAbs)) {
@@ -250,7 +254,10 @@ export async function writeDirectoryReport(report: AnalysisReport, outDir: strin
   // 固定テンプレではなく、framework/oauth/state 派生レポートを材料にドラフト化する。
   const lispauthOutDir = path.join(outDirAbs, "model-checker", "lispauth");
   const lispauthDraft = buildLispauthDraftFromDerivedReports({ report, framework, oauth, state });
-  const lispauthFile = writeLispauthDslReport(lispauthDraft, { outDir: lispauthOutDir });
+  const lispauthFile = writeLispauthDslReport(lispauthDraft, {
+    outDir: lispauthOutDir,
+    compactLinearTransitions: options.compactLinearTransitions,
+  });
   const roleDslFiles: Array<{ role: ReportRole; file: string }> = [];
   for (const roleScope of scoped.scopedReports) {
     const frameworkRole = frameworkByRole[roleScope.role];
@@ -267,6 +274,7 @@ export async function writeDirectoryReport(report: AnalysisReport, outDir: strin
     const file = writeLispauthDslReport(draft, {
       outDir: path.join(lispauthOutDir, "by-role"),
       fileStem: roleScope.role,
+      compactLinearTransitions: options.compactLinearTransitions,
     });
     roleDslFiles.push({ role: roleScope.role, file: path.join("by-role", file.fileName) });
   }
