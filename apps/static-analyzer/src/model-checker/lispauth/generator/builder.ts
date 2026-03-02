@@ -48,6 +48,14 @@ export function buildSpecSyntax(draft: LispauthSpecDraft): SyntaxNode {
     ...draft.machine.events.map(buildEventSyntax),
   ];
 
+  const httpDraft = draft.http ?? {};
+  const http: SyntaxNode[] = ["http"];
+  if (httpDraft.focusEndpoint) http.push(["focus-endpoint", httpDraft.focusEndpoint]);
+  for (const endpoint of httpDraft.endpoints ?? []) http.push(["endpoint", endpoint]);
+  for (const binding of httpDraft.eventEndpoints ?? []) {
+    http.push(["event-endpoints", binding.event, ...binding.endpoints]);
+  }
+
   const envDraft = draft.env ?? {};
   const env: SyntaxNode[] = ["env"];
   if (envDraft.scheduler) env.push(["scheduler", envDraft.scheduler]);
@@ -69,7 +77,7 @@ export function buildSpecSyntax(draft: LispauthSpecDraft): SyntaxNode {
     property.push(cx);
   }
 
-  return ["spec", draft.name, machine, env, property];
+  return ["spec", draft.name, machine, ...(http.length > 1 ? [http] : []), env, property];
 }
 
 /**
@@ -254,6 +262,25 @@ function renderCommentedLispauthDsl(draft: LispauthSpecDraft): string {
     pushLine(lines, 2, ")");
   }
   pushLine(lines, 1, ")");
+
+  const httpDraft = draft.http ?? {};
+  if (httpDraft.focusEndpoint || (httpDraft.endpoints?.length ?? 0) > 0 || (httpDraft.eventEndpoints?.length ?? 0) > 0) {
+    pushComment(lines, 1, "HTTP endpoint 情報（モデル化対象の通信面）");
+    pushLine(lines, 1, "(http");
+    if (httpDraft.focusEndpoint) {
+      pushComment(lines, 2, "この spec unit が主に注目する endpoint");
+      pushRendered(lines, 2, ["focus-endpoint", httpDraft.focusEndpoint]);
+    }
+    for (const endpoint of httpDraft.endpoints ?? []) {
+      pushComment(lines, 2, "観測された endpoint");
+      pushRendered(lines, 2, ["endpoint", endpoint]);
+    }
+    for (const binding of httpDraft.eventEndpoints ?? []) {
+      pushComment(lines, 2, `イベント ${binding.event} に関連する endpoint 候補`);
+      pushRendered(lines, 2, ["event-endpoints", binding.event, ...binding.endpoints]);
+    }
+    pushLine(lines, 1, ")");
+  }
 
   const envDraft = draft.env ?? {};
   pushComment(lines, 1, "探索環境（スケジューラ・セッション数・時間境界）");

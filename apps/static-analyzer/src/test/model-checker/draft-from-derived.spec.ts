@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { deriveFrameworkReports } from "../../framework/report"
-import { buildLispauthDraftUnitsFromDerivedReports } from "../../model-checker/lispauth/generator"
+import { buildLispauthDsl } from "../../model-checker/lispauth"
+import { buildLispauthDraftFromDerivedReports, buildLispauthDraftUnitsFromDerivedReports } from "../../model-checker/lispauth/generator"
 import { deriveOauthReport } from "../../oauth/report"
 import { deriveStateTransitionReport } from "../../state/report"
 import type { AnalysisReport } from "../../types/report"
@@ -59,6 +60,21 @@ function createReport(withRoleEntries: boolean): AnalysisReport {
 }
 
 describe("buildLispauthDraftUnitsFromDerivedReports", () => {
+  it("projects state transitions into S-expression machine events and keeps http endpoint metadata", () => {
+    const report = createReport(false)
+    const framework = deriveFrameworkReports(report)
+    const oauth = deriveOauthReport(report)
+    const state = deriveStateTransitionReport(report)
+    const draft = buildLispauthDraftFromDerivedReports({ report, framework, oauth, state })
+    const dsl = buildLispauthDsl(draft)
+
+    expect(draft.machine.states.length).toBeGreaterThanOrEqual(2)
+    expect(draft.machine.events.some((e) => e.name.startsWith("Step_"))).toBe(true)
+    expect(draft.http?.endpoints).toContain("/oauth/callback")
+    expect(dsl).toContain("(http")
+    expect(dsl).toContain("(endpoint /oauth/callback)")
+  })
+
   it("builds project units from role-based entries", () => {
     const report = createReport(true)
     const units = buildLispauthDraftUnitsFromDerivedReports({
