@@ -14,6 +14,7 @@ export function buildMachineFromStateTransitions(
   state: StateReport,
   oauth: OauthReport,
   signals: ObservedOauthSignals,
+  frameworkEndpointsByFunction?: Map<string, string[]>,
 ): MachineFromStateResult {
   const primary = selectPrimaryTransitionFunction(state, oauth)
   if (!primary) return buildFallbackOauthMachine(signals)
@@ -72,10 +73,10 @@ export function buildMachineFromStateTransitions(
     })
 
     const eventKey = edge.eventIndex === undefined ? undefined : `${primary.file}::${primary.functionId}::${edge.eventIndex}`
-    if (!eventKey) continue
-    const endpoints = endpointByEvent.get(eventKey)
-    if (!endpoints || endpoints.length === 0) continue
-    eventEndpoints.push({ event: eventName, endpoints })
+    const fromOauth = eventKey ? endpointByEvent.get(eventKey) ?? [] : []
+    const fromFramework = frameworkEndpointsByFunction?.get(`${primary.file}::${primary.functionId}`) ?? []
+    const endpoints = [...new Set([...fromOauth, ...fromFramework])].sort()
+    if (endpoints.length > 0) eventEndpoints.push({ event: eventName, endpoints })
   }
 
   if (events.length === 0 && states.length >= 2) {

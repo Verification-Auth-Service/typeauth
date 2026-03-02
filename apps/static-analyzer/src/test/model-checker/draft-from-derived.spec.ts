@@ -109,6 +109,35 @@ function createReportFromAuthorizeRef(): AnalysisReport {
   }
 }
 
+function createReactRouterRouteReport(): AnalysisReport {
+  return {
+    entry: "/repo/app/routes/login.tsx",
+    files: [
+      {
+        file: "/repo/app/routes/login.tsx",
+        imports: [{ source: "react-router", syntax: "import { redirect } from 'react-router'" }],
+        functions: [
+          {
+            id: "fn:loader",
+            name: "loader",
+            kind: "function",
+            loc,
+            events: [
+              {
+                kind: "redirect",
+                via: "call",
+                api: "redirect",
+                target: "\"/dashboard\"",
+                loc,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  }
+}
+
 describe("buildLispauthDraftUnitsFromDerivedReports", () => {
   it("projects state transitions into S-expression machine events and keeps http endpoint metadata", () => {
     const report = createReport(false)
@@ -167,6 +196,19 @@ describe("buildLispauthDraftUnitsFromDerivedReports", () => {
 
     expect(draft.http?.endpoints).toContain("/oauth/callback")
     expect(draft.http?.endpoints).not.toContain("authorizeUrl")
+  })
+
+  it("copies framework-derived route endpoints into lispauth http section", () => {
+    const report = createReactRouterRouteReport()
+    const draft = buildLispauthDraftFromDerivedReports({
+      report,
+      framework: deriveFrameworkReports(report),
+      oauth: deriveOauthReport(report),
+      state: deriveStateTransitionReport(report),
+    })
+
+    expect(draft.http?.endpoints).toContain("/login")
+    expect(draft.http?.eventEndpoints?.some((row) => row.endpoints.includes("/login"))).toBe(true)
   })
 
   it("initializes session.state when leaving Start for state-param flows", () => {

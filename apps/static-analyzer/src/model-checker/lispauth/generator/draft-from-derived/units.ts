@@ -1,8 +1,7 @@
 import path from "node:path"
 import type { AnalysisReport } from "../../../../types/report"
 import type { LispauthSpecDraft } from "../types"
-import type { LispauthDraftUnit, OauthReport } from "./context"
-import { buildEndpointCatalog } from "./analysis"
+import type { LispauthDraftUnit } from "./context"
 import { slugForSpecAtom } from "./naming"
 
 export function buildProjectUnits(base: LispauthSpecDraft, report: AnalysisReport): LispauthDraftUnit[] {
@@ -24,8 +23,8 @@ export function buildProjectUnits(base: LispauthSpecDraft, report: AnalysisRepor
   }))
 }
 
-export function buildHttpEndpointUnits(base: LispauthSpecDraft, oauth: OauthReport): LispauthDraftUnit[] {
-  const unique = buildEndpointCatalog(oauth).endpoints
+export function buildHttpEndpointUnits(base: LispauthSpecDraft): LispauthDraftUnit[] {
+  const unique = [...new Set(base.http?.endpoints ?? [])].sort()
   return unique.map((endpoint) => ({
     unitType: "http-endpoint" as const,
     unitId: `endpoint-${slugForSpecAtom(endpoint).toLowerCase() || "unknown"}`,
