@@ -64,4 +64,57 @@ describe("http -> oauth derivation pipeline", () => {
     expect(oauthFromHttp.summary).toEqual(oauthFromReport.summary);
     expect(oauthFromHttp.oauthLikeFlows.length).toBe(1);
   });
+
+  it("uses React Router route path as endpoint instead of redirect target", () => {
+    const report: AnalysisReport = {
+      entry: "/repo/app/routes/login.tsx",
+      files: [
+        {
+          file: "/repo/app/routes/login.tsx",
+          imports: [{ source: "react-router", syntax: "import { redirect } from 'react-router'" }],
+          functions: [
+            {
+              id: "fn:loader",
+              name: "loader",
+              kind: "function",
+              loc,
+              events: [
+                {
+                  kind: "redirect",
+                  via: "call",
+                  api: "redirect",
+                  target: "\"/dashboard\"",
+                  loc,
+                },
+              ],
+            },
+            {
+              id: "fn:redirectToError",
+              name: "redirectToError",
+              kind: "function",
+              loc,
+              events: [
+                {
+                  kind: "redirect",
+                  via: "call",
+                  api: "redirect",
+                  target: "\"/error\"",
+                  loc,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const framework = deriveFrameworkReports(report);
+    const http = deriveHttpReport(report, framework);
+
+    expect(http.summary.endpointCount).toBe(1);
+    expect(http.unresolved.redirects).toHaveLength(0);
+    expect(http.endpoints[0].endpoint).toBe("/login");
+    expect(http.endpoints[0].redirects).toHaveLength(2);
+    expect(http.endpoints[0].sourceValues).toEqual(expect.arrayContaining(["\"/dashboard\"", "\"/error\""]));
+  });
 });

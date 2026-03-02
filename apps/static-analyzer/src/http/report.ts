@@ -1,6 +1,7 @@
 import type { PEvent } from "../types/event";
 import type { AnalysisReport, FileReport, FunctionReport } from "../types/report";
 import type { deriveFrameworkReports } from "../framework/report";
+import { resolveFrameworkHttpEndpoints } from "../framework/http-endpoint";
 
 export type HttpRedirectRow = {
   file: string;
@@ -208,6 +209,7 @@ export function deriveHttpReport(
   const unresolvedRedirects: HttpRedirectRow[] = [];
   const unresolvedUrlParamSets: HttpUrlParamSetRow[] = [];
   const urlParamSetsByFunction = collectUrlParamSetsByFunction(urlParamSets);
+  const endpointByFunction = resolveFrameworkHttpEndpoints(report, framework);
 
   /**
    * 入力例: `ensure("/oauth/callback?code=abc")`
@@ -251,9 +253,11 @@ export function deriveHttpReport(
       continue;
     }
 
-    const endpoints = new Set<string>();
-    const direct = normalizeHttpEndpoint(r.target);
-    if (direct) endpoints.add(direct);
+    const endpoints = new Set<string>(endpointByFunction.get(functionKey(r)) ?? []);
+    if (endpoints.size === 0) {
+      const direct = normalizeHttpEndpoint(r.target);
+      if (direct) endpoints.add(direct);
+    }
 
     const contributors = endpoints.size === 0 ? findContributingUrlParamSets(r, urlParamSetsByFunction) : [];
     if (endpoints.size === 0) {
@@ -284,16 +288,21 @@ export function deriveHttpReport(
   }
 
   for (const s of urlParamSets) {
-    const endpoints = new Set<string>();
-    const direct = normalizeHttpEndpoint(s.urlExpr);
-    if (direct) endpoints.add(direct);
+    const endpoints = new Set<string>(endpointByFunction.get(functionKey(s)) ?? []);
+    let direct: string | undefined;
+    let fromValue: string | undefined;
 
-    const fromValue = paramValueEndpoint(s);
-    if (fromValue) endpoints.add(fromValue);
+    if (endpoints.size === 0) {
+      direct = normalizeHttpEndpoint(s.urlExpr);
+      if (direct) endpoints.add(direct);
 
-    const backPropagated = endpointByParamSetEventKey.get(eventKey(s));
-    if (backPropagated) {
-      for (const endpoint of backPropagated) endpoints.add(endpoint);
+      fromValue = paramValueEndpoint(s);
+      if (fromValue) endpoints.add(fromValue);
+
+      const backPropagated = endpointByParamSetEventKey.get(eventKey(s));
+      if (backPropagated) {
+        for (const endpoint of backPropagated) endpoints.add(endpoint);
+      }
     }
 
     if (endpoints.size === 0) {
