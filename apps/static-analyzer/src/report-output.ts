@@ -94,6 +94,7 @@ function writeHttpReport(
       urlParamSetCount: x.urlParamSets.length,
     })),
   );
+  writeJson(path.join(dir, "unresolved.json"), report.unresolved);
   if (options.writeEndpointFiles === false) return;
 
   const usedNames = new Map<string, number>();

@@ -19,11 +19,23 @@ export function slugForSpecAtom(value: string): string {
   return value.replace(/[^A-Za-z0-9_]/g, "_")
 }
 
-export function normalizeEndpoint(raw: string): string | undefined {
+function unwrapEndpointExpression(raw: string): string {
   let text = raw.trim()
-  text = text.replace(/^['"`]/, "").replace(/['"`]$/, "")
   text = text.replace(/^.*?redirect\(/, "").replace(/\).*$/, "").trim()
-  text = text.replace(/\.toString\(\)/g, "")
+  text = text.replace(/^['"`]/, "").replace(/['"`]$/, "")
+  return text.trim()
+}
+
+function stripQueryAndHash(pathOrRef: string): string {
+  const hashPos = pathOrRef.indexOf("#")
+  const withoutHash = hashPos >= 0 ? pathOrRef.slice(0, hashPos) : pathOrRef
+  const queryPos = withoutHash.indexOf("?")
+  return queryPos >= 0 ? withoutHash.slice(0, queryPos) : withoutHash
+}
+
+export function normalizeEndpoint(raw: string): string | undefined {
+  let text = unwrapEndpointExpression(raw)
+  text = text.replace(/\.toString\(\)\s*$/, "").trim()
   if (!text) return undefined
 
   if (/^https?:\/\//i.test(text)) {
@@ -31,11 +43,21 @@ export function normalizeEndpoint(raw: string): string | undefined {
       const u = new URL(text)
       return u.pathname || "/"
     } catch {
-      return text
+      return undefined
     }
   }
 
-  const qPos = text.indexOf("?")
-  if (qPos >= 0) text = text.slice(0, qPos)
-  return text || undefined
+  if (!text.startsWith("/")) return undefined
+  const normalized = stripQueryAndHash(text)
+  return normalized || "/"
+}
+
+export function extractEndpointReference(raw: string): string | undefined {
+  let text = unwrapEndpointExpression(raw)
+  text = text.replace(/\.toString\(\)\s*$/, "").trim()
+  if (!text) return undefined
+  if (/^https?:\/\//i.test(text)) return undefined
+  if (text.startsWith("/")) return undefined
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/.test(text)) return undefined
+  return text
 }

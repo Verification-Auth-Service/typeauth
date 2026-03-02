@@ -58,6 +58,9 @@ describe("http -> oauth derivation pipeline", () => {
     const oauthFromReport = deriveOauthReport(report);
     const oauthFromHttp = deriveOauthReportFromHttp(http);
 
+    expect(http.summary.endpointCount).toBe(0);
+    expect(http.unresolved.redirects).toHaveLength(1);
+    expect(http.unresolved.urlParamSets).toHaveLength(2);
     expect(oauthFromHttp.summary).toEqual(oauthFromReport.summary);
     expect(oauthFromHttp.oauthLikeFlows.length).toBe(1);
   });

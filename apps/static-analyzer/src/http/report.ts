@@ -45,6 +45,10 @@ export type HttpDerivedReport = {
     detectedFrameworks: string[];
   };
   endpoints: HttpEndpointRow[];
+  unresolved: {
+    redirects: HttpRedirectRow[];
+    urlParamSets: HttpUrlParamSetRow[];
+  };
 };
 
 /**
@@ -82,7 +86,7 @@ function isUrlParamSetEvent(e: PEvent): e is Extract<PEvent, { kind: "urlParamSe
 export function normalizeHttpEndpoint(raw: string): string | undefined {
   let text = raw.trim();
   text = text.replace(/^['"`]/, "").replace(/['"`]$/, "");
-  text = text.replace(/\.toString\(\)/g, "");
+  text = text.replace(/\.toString\(\)\s*$/, "");
   if (!text) return undefined;
 
   if (/^https?:\/\//i.test(text)) {
@@ -90,13 +94,69 @@ export function normalizeHttpEndpoint(raw: string): string | undefined {
       const u = new URL(text);
       return u.pathname || "/";
     } catch {
-      return text;
+      return undefined;
     }
   }
 
+  if (!text.startsWith("/")) return undefined;
+  const hashPos = text.indexOf("#");
+  if (hashPos >= 0) text = text.slice(0, hashPos);
   const qPos = text.indexOf("?");
   if (qPos >= 0) text = text.slice(0, qPos);
-  return text || undefined;
+  return text || "/";
+}
+
+function extractEndpointReference(raw: string): string | undefined {
+  let text = raw.trim();
+  text = text.replace(/^['"`]/, "").replace(/['"`]$/, "");
+  text = text.replace(/\.toString\(\)\s*$/, "");
+  if (!text) return undefined;
+  if (/^https?:\/\//i.test(text)) return undefined;
+  if (text.startsWith("/")) return undefined;
+  if (!/^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/.test(text)) return undefined;
+  return text;
+}
+
+function normalizeParamKey(raw: string): string {
+  return raw.trim().replace(/^['"`]/, "").replace(/['"`]$/, "");
+}
+
+function paramValueEndpoint(row: HttpUrlParamSetRow): string | undefined {
+  if (normalizeParamKey(row.key) !== "redirect_uri") return undefined;
+  if (!row.value) return undefined;
+  return normalizeHttpEndpoint(row.value);
+}
+
+function functionKey(row: { file: string; functionId: string }): string {
+  return `${row.file}::${row.functionId}`;
+}
+
+function eventKey(row: { file: string; functionId: string; eventIndex: number }): string {
+  return `${row.file}::${row.functionId}::${row.eventIndex}`;
+}
+
+function collectUrlParamSetsByFunction(urlParamSets: HttpUrlParamSetRow[]): Map<string, HttpUrlParamSetRow[]> {
+  const out = new Map<string, HttpUrlParamSetRow[]>();
+  for (const row of urlParamSets) {
+    const key = functionKey(row);
+    const current = out.get(key) ?? [];
+    current.push(row);
+    out.set(key, current);
+  }
+  for (const rows of out.values()) rows.sort((a, b) => a.eventIndex - b.eventIndex);
+  return out;
+}
+
+function findContributingUrlParamSets(
+  redirect: HttpRedirectRow,
+  byFunction: Map<string, HttpUrlParamSetRow[]>,
+): HttpUrlParamSetRow[] {
+  const target = redirect.target;
+  if (!target) return [];
+  const ref = extractEndpointReference(target);
+  if (!ref) return [];
+  const rows = byFunction.get(functionKey(redirect)) ?? [];
+  return rows.filter((row) => row.urlExpr === ref && row.eventIndex <= redirect.eventIndex);
 }
 
 /**
@@ -144,6 +204,10 @@ export function deriveHttpReport(
 
   const endpointMap = new Map<string, HttpEndpointRow>();
   const functionKeyByEndpoint = new Map<string, Set<string>>();
+  const endpointByParamSetEventKey = new Map<string, Set<string>>();
+  const unresolvedRedirects: HttpRedirectRow[] = [];
+  const unresolvedUrlParamSets: HttpUrlParamSetRow[] = [];
+  const urlParamSetsByFunction = collectUrlParamSetsByFunction(urlParamSets);
 
   /**
    * 入力例: `ensure("/oauth/callback?code=abc")`
@@ -182,22 +246,74 @@ export function deriveHttpReport(
   }
 
   for (const r of redirects) {
-    if (!r.target) continue;
-    const endpoint = normalizeHttpEndpoint(r.target);
-    if (!endpoint) continue;
-    const row = ensure(endpoint);
-    row.redirects.push(r);
-    if (!row.sourceValues.includes(r.target)) row.sourceValues.push(r.target);
-    addFunctionRef(endpoint, r.file, r.functionId, r.functionName);
+    if (!r.target) {
+      unresolvedRedirects.push(r);
+      continue;
+    }
+
+    const endpoints = new Set<string>();
+    const direct = normalizeHttpEndpoint(r.target);
+    if (direct) endpoints.add(direct);
+
+    const contributors = endpoints.size === 0 ? findContributingUrlParamSets(r, urlParamSetsByFunction) : [];
+    if (endpoints.size === 0) {
+      for (const c of contributors) {
+        const fromParam = paramValueEndpoint(c);
+        if (fromParam) endpoints.add(fromParam);
+      }
+    }
+
+    if (endpoints.size === 0) {
+      unresolvedRedirects.push(r);
+      continue;
+    }
+
+    for (const endpoint of endpoints) {
+      const row = ensure(endpoint);
+      row.redirects.push(r);
+      if (!row.sourceValues.includes(r.target)) row.sourceValues.push(r.target);
+      addFunctionRef(endpoint, r.file, r.functionId, r.functionName);
+    }
+
+    for (const c of contributors) {
+      const key = eventKey(c);
+      const current = endpointByParamSetEventKey.get(key) ?? new Set<string>();
+      for (const endpoint of endpoints) current.add(endpoint);
+      endpointByParamSetEventKey.set(key, current);
+    }
   }
 
   for (const s of urlParamSets) {
-    const endpoint = normalizeHttpEndpoint(s.urlExpr);
-    if (!endpoint) continue;
-    const row = ensure(endpoint);
-    row.urlParamSets.push(s);
-    if (!row.sourceValues.includes(s.urlExpr)) row.sourceValues.push(s.urlExpr);
-    addFunctionRef(endpoint, s.file, s.functionId, s.functionName);
+    const endpoints = new Set<string>();
+    const direct = normalizeHttpEndpoint(s.urlExpr);
+    if (direct) endpoints.add(direct);
+
+    const fromValue = paramValueEndpoint(s);
+    if (fromValue) endpoints.add(fromValue);
+
+    const backPropagated = endpointByParamSetEventKey.get(eventKey(s));
+    if (backPropagated) {
+      for (const endpoint of backPropagated) endpoints.add(endpoint);
+    }
+
+    if (endpoints.size === 0) {
+      unresolvedUrlParamSets.push(s);
+      continue;
+    }
+
+    const sourceValues = new Set<string>();
+    if (direct) sourceValues.add(s.urlExpr);
+    if (fromValue && s.value) sourceValues.add(s.value);
+    if (sourceValues.size === 0) sourceValues.add(s.urlExpr);
+
+    for (const endpoint of endpoints) {
+      const row = ensure(endpoint);
+      row.urlParamSets.push(s);
+      for (const sourceValue of sourceValues) {
+        if (!row.sourceValues.includes(sourceValue)) row.sourceValues.push(sourceValue);
+      }
+      addFunctionRef(endpoint, s.file, s.functionId, s.functionName);
+    }
   }
 
   const endpoints = [...endpointMap.values()].sort((a, b) => a.endpoint.localeCompare(b.endpoint));
@@ -210,5 +326,9 @@ export function deriveHttpReport(
       detectedFrameworks: framework.summary.detectedFrameworks,
     },
     endpoints,
+    unresolved: {
+      redirects: unresolvedRedirects,
+      urlParamSets: unresolvedUrlParamSets,
+    },
   };
 }

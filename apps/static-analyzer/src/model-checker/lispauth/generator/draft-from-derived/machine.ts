@@ -2,7 +2,8 @@ import { q } from "../builder"
 import type { LispauthSpecDraft } from "../types"
 import type { OauthReport, StateReport } from "./context"
 import type { ObservedOauthSignals } from "./analysis"
-import { normalizeEndpoint, slugForSpecAtom } from "./naming"
+import { resolveOauthEndpoints } from "./endpoint-resolver"
+import { slugForSpecAtom } from "./naming"
 
 export type MachineFromStateResult = {
   machine: LispauthSpecDraft["machine"]
@@ -17,7 +18,7 @@ export function buildMachineFromStateTransitions(
   const primary = selectPrimaryTransitionFunction(state, oauth)
   if (!primary) return buildFallbackOauthMachine(signals)
 
-  const endpointByEvent = buildEndpointByEventKey(oauth)
+  const endpointByEvent = resolveOauthEndpoints(oauth).byEventKey
   const stateNameByNodeId = new Map<string, string>()
   const usedStateNames = new Set<string>()
   const usedEventNames = new Set<string>()
@@ -62,6 +63,9 @@ export function buildMachineFromStateTransitions(
         ...(signals.hasStateParam && fromState === "Start" && toState !== "Start"
           ? [["set", "session.state", ["fresh", "state"]]]
           : []),
+        ...(signals.hasPkce && fromState === "Start" && toState !== "Start"
+          ? [["set", "session.verifier", ["fresh", "verifier"]]]
+          : []),
         ["set", "session.stage", q(toState)],
       ],
       goto: toState,
@@ -84,6 +88,9 @@ export function buildMachineFromStateTransitions(
         do: [
           ...(signals.hasStateParam && startState === "Start" && endState !== "Start"
             ? [["set", "session.state", ["fresh", "state"]]]
+            : []),
+          ...(signals.hasPkce && startState === "Start" && endState !== "Start"
+            ? [["set", "session.verifier", ["fresh", "verifier"]]]
             : []),
           ["set", "session.stage", q(endState)],
         ],
@@ -189,25 +196,6 @@ function selectPrimaryTransitionFunction(state: StateReport, oauth: OauthReport)
     }
     return a.functionId.localeCompare(b.functionId)
   })[0]
-}
-
-function buildEndpointByEventKey(oauth: OauthReport): Map<string, string[]> {
-  const temp = new Map<string, Set<string>>()
-  const add = (key: string, raw: string | undefined) => {
-    if (!raw) return
-    const endpoint = normalizeEndpoint(raw)
-    if (!endpoint) return
-    const current = temp.get(key) ?? new Set<string>()
-    current.add(endpoint)
-    temp.set(key, current)
-  }
-
-  for (const redirect of oauth.redirects) add(`${redirect.file}::${redirect.functionId}::${redirect.eventIndex}`, redirect.target)
-  for (const paramSet of oauth.urlParamSets) add(`${paramSet.file}::${paramSet.functionId}::${paramSet.eventIndex}`, paramSet.urlExpr)
-
-  const out = new Map<string, string[]>()
-  for (const [key, endpoints] of temp.entries()) out.set(key, [...endpoints].sort())
-  return out
 }
 
 function compactEventEndpoints(rows: Array<{ event: string; endpoints: string[] }>): Array<{ event: string; endpoints: string[] }> {

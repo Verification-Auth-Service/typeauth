@@ -63,7 +63,7 @@ describe("buildReportCoverage", () => {
     });
     expect(coverage.sourceDerived.eventKindCounts.redirect).toBe(1);
     expect(coverage.sourceDerived.eventKindCounts.urlParamSet).toBe(1);
-    expect(coverage.http.endpointCount).toBeGreaterThanOrEqual(1);
+    expect(coverage.http.endpointCount).toBe(0);
     expect(coverage.endpointFieldCoverage.notCollectedYet).toContain("HTTP method");
   });
 });
