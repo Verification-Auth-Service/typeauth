@@ -110,14 +110,6 @@ export function buildDefaultInvariants(
           },
         ]
       : []),
-    ...(profile.terminalHeavy
-      ? [
-          {
-            name: "eventually-can-finish",
-            expr: ["=>", ["=", "session.stage", q("End")], true],
-          },
-        ]
-      : []),
   ]
 }
 
