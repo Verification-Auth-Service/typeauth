@@ -3,21 +3,21 @@ import type { SyntaxNode } from "../shared/syntax-node"
 
 export { isList, isSym, sym }
 
-// lispauth 用の最小 S 式パーサ。
-// 目的は「一般 Lisp の完全実装」ではなく、仕様 DSL の構文木を安定して得ること。
-// そのため reader macro や dotted pair 等は未対応。
 /**
- * 入力例: `parseSyntax("(spec (vars) (machine) (property))")`
- * 成果物: 入力DSLをS式ASTへ変換して返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
+ * lispauth DSL を `SyntaxNode` に変換する最小 S 式パーサ。
+ *
+ * 対応範囲はモデルチェッカ向けの DSL に限定しており、
+ * 一般 Lisp の reader macro / dotted pair などは扱わない。
+ *
+ * @param input DSL テキスト。例:
+ * `(spec Mini (machine (states Start Done)) (env) (property))`
+ * @returns 構文木。例:
+ * `["spec", "Mini", ["machine", ["states", "Start", "Done"]], ["env"], ["property"]]`
  */
 export function parseSyntax(input: string): SyntaxNode {
   const tokens = tokenize(input)
   let i = 0
 
-  /**
-   * 入力例: `parseOne()`
-   * 成果物: 処理結果オブジェクトを返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
-   */
   function parseOne(): SyntaxNode {
     const t = tokens[i]
     if (!t) throw new Error("Unexpected EOF")
@@ -48,8 +48,10 @@ export function parseSyntax(input: string): SyntaxNode {
 }
 
 /**
- * 入力例: `tokenize("(spec (vars) (machine) (property))")`
- * 成果物: S式パース用のトークン配列を返す。 失敗時: 不正入力や不整合を検出した場合は例外を送出する。
+ * S 式トークナイザ。
+ *
+ * @param input DSL テキスト。
+ * @returns `(`, `)`, 文字列リテラル、atom を切り出したトークン列。
  */
 function tokenize(input: string): string[] {
   // tokenizer は parser とは独立させ、構文エラー原因の切り分けをしやすくする。

@@ -30,8 +30,15 @@ type ModelCheckOptions = {
 // この方針は厳密な分散モデルではないが、OAuth の混線/順序崩れ/重複の初期検出には
 // コストに対して効果が高い。
 /**
- * 入力例: `modelCheck({ vars: [], events: [], inits: [], properties: { invariants: [] } }, { maxDepth: 3 })`
- * 成果物: 仕様の到達探索を実行し、`ok/counterexample/stats` を返す。
+ * コンパイル済み仕様に対して到達探索を行い、不変条件を検証する。
+ *
+ * @param spec `compileSpec()` が返した `CompiledSpec`。
+ * 例: `{ states, vars, events, env: { sessions: 2, maxSteps: 8, tick: 1 }, properties: { invariants: [...] } }`
+ * @param options 進捗通知フック。例:
+ * `{ onProgress: (p) => console.log(p.phase, p.explored) }`
+ * @returns 検証結果。例:
+ * 成功: `{ ok: true, explored: 42 }`
+ * 失敗: `{ ok: false, explored: 17, invariant: "callback-must-match-state", trace: [...] }`
  */
 export function modelCheck(spec: CompiledSpec, options: ModelCheckOptions = {}): ModelCheckResult {
   // 初期状態は spec から 1 回だけ生成する。

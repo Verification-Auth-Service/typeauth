@@ -21,6 +21,14 @@ export type LispauthDraftUnit = {
   draft: LispauthSpecDraft
 }
 
+/**
+ * 解析済みレポート群から、1つの lispauth 仕様下書きを生成する。
+ *
+ * @param args 静的解析結果の束。
+ * 例: `{ report, framework: deriveFrameworkReports(report), oauth: deriveOauthReport(report), state: deriveStateTransitionReport(report) }`
+ * @returns `LispauthSpecDraft`。例:
+ * `{ name, machine: { states, vars, events }, http, env, property }`
+ */
 export function buildLispauthDraftFromDerivedReports(args: BuildLispauthDraftFromDerivedReportsArgs): LispauthSpecDraft {
   const { report, framework, oauth, state } = args
 
@@ -50,6 +58,13 @@ export function buildLispauthDraftFromDerivedReports(args: BuildLispauthDraftFro
   }
 }
 
+/**
+ * プロジェクト単位と endpoint 単位の複数ドラフトユニットを生成する。
+ *
+ * @param args `buildLispauthDraftFromDerivedReports` と同じ入力。
+ * @returns `LispauthDraftUnit[]`。例:
+ * `[{ unitType: "project", unitId: "project-...-client", ... }, { unitType: "http-endpoint", unitId: "endpoint-...", ... }]`
+ */
 export function buildLispauthDraftUnitsFromDerivedReports(
   args: BuildLispauthDraftFromDerivedReportsArgs,
 ): LispauthDraftUnit[] {
