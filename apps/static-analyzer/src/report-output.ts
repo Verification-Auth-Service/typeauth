@@ -5,7 +5,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { deriveFrameworkReports } from "./framework/report";
 import { deriveHttpReport } from "./http/report";
 import { writeLispauthDslReport } from "./model-checker/lispauth";
-import { buildLispauthDraftFromDerivedReports, buildLispauthDraftUnitsFromDerivedReports } from "./model-checker/lispauth/generator";
+import { buildLispauthDraftFromDerivedReports } from "./model-checker/lispauth/generator";
 import { deriveOauthReportFromHttp } from "./oauth/report";
 import { deriveStateTransitionReport } from "./state/report";
 import type { AnalysisReport } from "./types/report";
@@ -193,24 +193,6 @@ export async function writeDirectoryReport(report: AnalysisReport, outDir: strin
   const lispauthOutDir = path.join(outDirAbs, "model-checker", "lispauth");
   const lispauthDraft = buildLispauthDraftFromDerivedReports({ report, framework, oauth, state });
   const lispauthFile = writeLispauthDslReport(lispauthDraft, { outDir: lispauthOutDir });
-  const unitDrafts = buildLispauthDraftUnitsFromDerivedReports({ report, framework, oauth, state });
-  const unitFiles = unitDrafts.map((unit) => {
-    const unitDir = unit.unitType === "project" ? path.join(lispauthOutDir, "by-project") : path.join(lispauthOutDir, "by-http-endpoint");
-    const out = writeLispauthDslReport(unit.draft, {
-      outDir: unitDir,
-      fileStem: `lispauth-${toSafeFileStem(unit.unitId)}`,
-    });
-    return {
-      unitType: unit.unitType,
-      unitId: unit.unitId,
-      label: unit.label,
-      fileName: out.fileName,
-      filePath: out.filePath,
-    };
-  });
-
-  const projectDslFiles = unitFiles.filter((x) => x.unitType === "project");
-  const endpointDslFiles = unitFiles.filter((x) => x.unitType === "http-endpoint");
   writeJson(path.join(lispauthOutDir, "_meta.json"), {
     generatedAt: new Date().toISOString(),
     sourceEntry: report.entry,
@@ -221,20 +203,13 @@ export async function writeDirectoryReport(report: AnalysisReport, outDir: strin
     urlParamSetCount: oauth.summary.urlParamSetCount,
     stateSummary: state.summary,
     dslFile: lispauthFile.fileName,
-    byProjectDslCount: projectDslFiles.length,
-    byHttpEndpointDslCount: endpointDslFiles.length,
+    unifiedDsl: true,
+    byProjectDslCount: 0,
+    byHttpEndpointDslCount: 0,
     dslFiles: {
       main: lispauthFile.fileName,
-      byProject: projectDslFiles.map((x) => ({
-        unitId: x.unitId,
-        label: x.label,
-        fileName: x.fileName,
-      })),
-      byHttpEndpoint: endpointDslFiles.map((x) => ({
-        unitId: x.unitId,
-        label: x.label,
-        fileName: x.fileName,
-      })),
+      byProject: [],
+      byHttpEndpoint: [],
     },
   });
 
