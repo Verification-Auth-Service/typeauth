@@ -8,6 +8,7 @@ import { writeLispauthDslReport } from "./model-checker/lispauth";
 import { buildLispauthDraftFromDerivedReports } from "./model-checker/lispauth/generator";
 import { deriveOauthReportFromHttp } from "./oauth/report";
 import { buildRoleScopedReports, type ReportRole } from "./roles/report";
+import { buildReportCoverage } from "./report-coverage";
 import { deriveStateTransitionReport } from "./state/report";
 import type { AnalysisReport } from "./types/report";
 
@@ -239,6 +240,10 @@ export async function writeDirectoryReport(report: AnalysisReport, outDir: strin
   writeJson(path.join(stateDir, "_summary.json"), state.summary);
   writeJson(path.join(stateDir, "files.json"), state.files);
   writeJson(path.join(stateDir, "functions.json"), state.functions);
+
+  const coverage = buildReportCoverage(report, framework, http, oauth, state);
+  writeJson(path.join(outDirAbs, "_coverage.json"), coverage);
+  writeJson(path.join(sourceDerivedDir, "_coverage.json"), coverage);
 
   // OAuth 解析結果から、lispauth モデル検査の叩き台 DSL を同梱する。
   // 固定テンプレではなく、framework/oauth/state 派生レポートを材料にドラフト化する。
