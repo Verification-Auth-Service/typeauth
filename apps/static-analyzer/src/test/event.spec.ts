@@ -114,4 +114,68 @@ describe("extractEventsのテスト", () => {
       headerKeys: ["Set-Cookie"],
     });
   });
+
+  it("session / db / form の入出力イベントを抽出できる", () => {
+    const code = `
+      async function action(request: Request) {
+        const session = await getSession(request);
+        const state = session.get("oauth:state");
+        session.set("oauth:state", "next-state");
+        await commitSession(session);
+
+        const formData = await request.formData();
+        const grantType = String(formData.get("grant_type") ?? "").trim();
+        formData.set("scope", "read");
+
+        await prisma.user.findUnique({ where: { id: "u1" } });
+        await prisma.user.upsert({
+          where: { id: "u1" },
+          update: { state },
+          create: { id: "u1", state: grantType },
+        });
+      }
+    `;
+    const sourceFile = createSourceFile(code);
+    const checker = createChecker(sourceFile);
+    const out: PEvent[] = extractEvents(checker, sourceFile, sourceFile, []);
+
+    const sessionOps = out.filter((e): e is Extract<PEvent, { kind: "sessionOp" }> => e.kind === "sessionOp");
+    expect(sessionOps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ operation: "load", api: "getSession" }),
+        expect.objectContaining({ operation: "get", api: "session.get", key: "\"oauth:state\"" }),
+        expect.objectContaining({ operation: "set", api: "session.set", key: "\"oauth:state\"", value: "\"next-state\"" }),
+        expect.objectContaining({ operation: "commit", api: "commitSession" }),
+      ]),
+    );
+
+    const formOps = out.filter((e): e is Extract<PEvent, { kind: "formOp" }> => e.kind === "formOp");
+    expect(formOps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ operation: "load", api: "request.formData" }),
+        expect.objectContaining({ operation: "get", api: "formData.get", field: "\"grant_type\"" }),
+        expect.objectContaining({ operation: "set", api: "formData.set", field: "\"scope\"", value: "\"read\"" }),
+      ]),
+    );
+
+    const dbOps = out.filter((e): e is Extract<PEvent, { kind: "dbOp" }> => e.kind === "dbOp");
+    expect(dbOps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "read",
+          api: "prisma.user.findUnique",
+          method: "findUnique",
+          clientExpr: "prisma.user",
+          model: "user",
+        }),
+        expect.objectContaining({
+          operation: "write",
+          api: "prisma.user.upsert",
+          method: "upsert",
+          clientExpr: "prisma.user",
+          model: "user",
+        }),
+      ]),
+    );
+  });
 });
