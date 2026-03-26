@@ -106,6 +106,16 @@ function eventLabel(e: PEvent): string {
       return `redirect:${e.api}${e.target ? ` -> ${e.target}` : ""}`;
     case "urlParamSet":
       return `${e.urlExpr}.searchParams.set(${e.key}${e.value ? `, ${e.value}` : ""})`;
+    case "sessionOp":
+      if (e.operation === "load" || e.operation === "commit" || e.operation === "destroy") {
+        return `session:${e.operation} ${e.api}`;
+      }
+      return `${e.api}(${e.key ?? ""}${e.value ? `, ${e.value}` : ""})`;
+    case "dbOp":
+      return `db:${e.operation} ${e.api}${e.model ? ` [${e.model}]` : ""}`;
+    case "formOp":
+      if (e.operation === "load") return `${e.api}()`;
+      return `form:${e.operation} ${e.api}(${e.field ?? ""}${e.value ? `, ${e.value}` : ""})`;
     case "call":
       return `call ${e.callee}`;
     case "new":

@@ -117,6 +117,55 @@ export type PEvent = (
       valueType?: TypeInfo;
     }
   | {
+      // セッションへの入出力操作
+      // 例:
+      // - `session.set("oauth:state", state)`
+      // - `session.get("oauth:state")`
+      // - `await getSession(request)`
+      // - `await commitSession(session)`
+      kind: "sessionOp";
+      operation: "load" | "commit" | "destroy" | "get" | "set" | "unset" | "flash" | "has";
+      // 検出した API (例: `session.set`, `getSession`)
+      api: string;
+      // メソッド呼び出し時のセッション式 (例: `session`)
+      sessionExpr?: string;
+      key?: string;
+      keyType?: TypeInfo;
+      value?: string;
+      valueType?: TypeInfo;
+    }
+  | {
+      // DB アクセス操作 (Prisma / db client / repository などの呼び出し)
+      // 例:
+      // - `prisma.user.findUnique(...)`
+      // - `prisma.oAuthAccount.upsert(...)`
+      kind: "dbOp";
+      operation: "read" | "write" | "other";
+      // 検出した API (例: `prisma.user.findUnique`)
+      api: string;
+      method: string;
+      // DB クライアント側の式 (例: `prisma.user`)
+      clientExpr: string;
+      // Prisma 形式で model 名が取れる場合のみ
+      model?: string;
+      args: { text: string; type?: TypeInfo }[];
+    }
+  | {
+      // フォーム入出力操作
+      // 例:
+      // - `await request.formData()`
+      // - `formData.get("client_id")`
+      kind: "formOp";
+      operation: "load" | "get" | "getAll" | "set" | "append" | "has" | "delete";
+      // 検出した API (例: `request.formData`, `formData.get`)
+      api: string;
+      formExpr?: string;
+      field?: string;
+      fieldType?: TypeInfo;
+      value?: string;
+      valueType?: TypeInfo;
+    }
+  | {
       // 関数/メソッド/コンストラクタ呼び出し
       kind: "call";
       // 呼び出し先のソース文字列 (例: `console.log`, `service.run`)
