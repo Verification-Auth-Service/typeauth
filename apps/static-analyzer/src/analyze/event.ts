@@ -135,6 +135,178 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
     };
   };
 
+  const isLikelySessionExpr = (text: string): boolean => {
+    return /(^|[.$_])session([.$_]|$)/i.test(text);
+  };
+
+  const sessionMethodInfo = (
+    n: ts.CallExpression
+  ):
+    | {
+        operation: "get" | "set" | "unset" | "flash" | "has";
+        api: string;
+        sessionExpr: string;
+        keyArg?: ts.Expression;
+        valueArg?: ts.Expression;
+      }
+    | undefined => {
+    if (!ts.isPropertyAccessExpression(n.expression)) return undefined;
+    const method = n.expression.name.text;
+    const allowed = new Set(["get", "set", "unset", "flash", "has"]);
+    if (!allowed.has(method)) return undefined;
+
+    const sessionExpr = n.expression.expression.getText(sf);
+    if (sessionExpr.endsWith(".searchParams")) return undefined;
+    if (!isLikelySessionExpr(sessionExpr)) return undefined;
+
+    return {
+      operation: method as "get" | "set" | "unset" | "flash" | "has",
+      api: n.expression.getText(sf),
+      sessionExpr,
+      keyArg: n.arguments[0],
+      valueArg: n.arguments[1],
+    };
+  };
+
+  const sessionLifecycleInfo = (
+    n: ts.CallExpression
+  ): { operation: "load" | "commit" | "destroy"; api: string } | undefined => {
+    const callee = n.expression.getText(sf);
+    if (/(\.|^)getSession$/i.test(callee)) return { operation: "load", api: callee };
+    if (/(\.|^)commitSession$/i.test(callee)) return { operation: "commit", api: callee };
+    if (/(\.|^)destroySession$/i.test(callee)) return { operation: "destroy", api: callee };
+    return undefined;
+  };
+
+  const isLikelyDbExpr = (text: string): boolean => {
+    return /(^|[.$_])(prisma|db|database|repo|repository|dao|store)([.$_]|$)/i.test(text);
+  };
+
+  const prismaModelFromExpr = (clientExpr: string): string | undefined => {
+    const parts = clientExpr.split(".").filter(Boolean);
+    const prismaIndex = parts.findIndex((x) => x.toLowerCase() === "prisma");
+    if (prismaIndex >= 0 && prismaIndex < parts.length - 1) return parts[prismaIndex + 1];
+    if (parts[0]?.toLowerCase() === "prisma" && parts.length >= 2) return parts[1];
+    return undefined;
+  };
+
+  const dbOperationInfo = (
+    n: ts.CallExpression
+  ): { operation: "read" | "write" | "other"; api: string; method: string; clientExpr: string; model?: string } | undefined => {
+    if (!ts.isPropertyAccessExpression(n.expression)) return undefined;
+
+    const method = n.expression.name.text;
+    const clientExpr = n.expression.expression.getText(sf);
+    if (clientExpr.endsWith(".searchParams")) return undefined;
+
+    const readMethods = new Set([
+      "find",
+      "findById",
+      "findFirst",
+      "findMany",
+      "findOne",
+      "findUnique",
+      "count",
+      "aggregate",
+      "groupBy",
+      "query",
+      "queryRaw",
+      "select",
+      "get",
+    ]);
+    const writeMethods = new Set([
+      "create",
+      "createMany",
+      "insert",
+      "update",
+      "updateMany",
+      "upsert",
+      "delete",
+      "deleteMany",
+      "remove",
+      "save",
+      "execute",
+      "executeRaw",
+      "patch",
+      "replace",
+    ]);
+    const otherMethods = new Set(["$transaction", "transaction"]);
+    const knownMethod = readMethods.has(method) || writeMethods.has(method) || otherMethods.has(method);
+
+    if (!knownMethod || !isLikelyDbExpr(clientExpr)) return undefined;
+
+    const operation: "read" | "write" | "other" = readMethods.has(method)
+      ? "read"
+      : writeMethods.has(method)
+        ? "write"
+        : "other";
+
+    return {
+      operation,
+      api: n.expression.getText(sf),
+      method,
+      clientExpr,
+      model: prismaModelFromExpr(clientExpr),
+    };
+  };
+
+  const isLikelyFormExpr = (expr: ts.Expression): boolean => {
+    const text = expr.getText(sf);
+    if (/form(data)?/i.test(text)) return true;
+    if (text === "request" || text.endsWith(".request")) return true;
+    if (!ts.isCallExpression(expr)) return false;
+    if (!ts.isPropertyAccessExpression(expr.expression)) return false;
+    return expr.expression.name.text === "formData";
+  };
+
+  const formOperationInfo = (
+    n: ts.CallExpression
+  ):
+    | {
+        operation: "load" | "get" | "getAll" | "set" | "append" | "has" | "delete";
+        api: string;
+        formExpr?: string;
+        fieldArg?: ts.Expression;
+        valueArg?: ts.Expression;
+      }
+    | undefined => {
+    if (!ts.isPropertyAccessExpression(n.expression)) return undefined;
+    const method = n.expression.name.text;
+    const formExprNode = n.expression.expression;
+    const formExprText = formExprNode.getText(sf);
+
+    if (method === "formData") {
+      if (n.arguments.length > 0) return undefined;
+      if (!/request/i.test(formExprText)) return undefined;
+      return {
+        operation: "load",
+        api: n.expression.getText(sf),
+        formExpr: formExprText,
+      };
+    }
+
+    const opMap: Record<string, "get" | "getAll" | "set" | "append" | "has" | "delete"> = {
+      get: "get",
+      getAll: "getAll",
+      set: "set",
+      append: "append",
+      has: "has",
+      delete: "delete",
+    };
+    const op = opMap[method];
+    if (!op) return undefined;
+    if (formExprText.endsWith(".searchParams")) return undefined;
+    if (!isLikelyFormExpr(formExprNode)) return undefined;
+
+    return {
+      operation: op,
+      api: n.expression.getText(sf),
+      formExpr: formExprText,
+      fieldArg: n.arguments[0],
+      valueArg: n.arguments[1],
+    };
+  };
+
   // blockEnter/blockExit を必ず対で積むため、push 処理を小関数化しておく。
   // こうしておくとイベント構造の変更時に loc/label の作り方を一箇所で直せる。
   /**
@@ -325,6 +497,56 @@ export function extractEvents(checker: ts.TypeChecker, sf: ts.SourceFile, node: 
           keyType: typeInfo(checker, urlParamSet.keyArg),
           value: urlParamSet.valueArg?.getText(sf),
           valueType: urlParamSet.valueArg ? typeInfo(checker, urlParamSet.valueArg) : undefined,
+        });
+      }
+      const sessionMethod = sessionMethodInfo(n);
+      if (sessionMethod) {
+        out.push({
+          kind: "sessionOp",
+          ...eventBase(n),
+          operation: sessionMethod.operation,
+          api: sessionMethod.api,
+          sessionExpr: sessionMethod.sessionExpr,
+          key: sessionMethod.keyArg?.getText(sf),
+          keyType: sessionMethod.keyArg ? typeInfo(checker, sessionMethod.keyArg) : undefined,
+          value: sessionMethod.valueArg?.getText(sf),
+          valueType: sessionMethod.valueArg ? typeInfo(checker, sessionMethod.valueArg) : undefined,
+        });
+      }
+      const sessionLifecycle = sessionLifecycleInfo(n);
+      if (sessionLifecycle) {
+        out.push({
+          kind: "sessionOp",
+          ...eventBase(n),
+          operation: sessionLifecycle.operation,
+          api: sessionLifecycle.api,
+        });
+      }
+      const dbOp = dbOperationInfo(n);
+      if (dbOp) {
+        out.push({
+          kind: "dbOp",
+          ...eventBase(n),
+          operation: dbOp.operation,
+          api: dbOp.api,
+          method: dbOp.method,
+          clientExpr: dbOp.clientExpr,
+          model: dbOp.model,
+          args: n.arguments.map((a) => ({ text: a.getText(sf), type: typeInfo(checker, a) })),
+        });
+      }
+      const formOp = formOperationInfo(n);
+      if (formOp) {
+        out.push({
+          kind: "formOp",
+          ...eventBase(n),
+          operation: formOp.operation,
+          api: formOp.api,
+          formExpr: formOp.formExpr,
+          field: formOp.fieldArg?.getText(sf),
+          fieldType: formOp.fieldArg ? typeInfo(checker, formOp.fieldArg) : undefined,
+          value: formOp.valueArg?.getText(sf),
+          valueType: formOp.valueArg ? typeInfo(checker, formOp.valueArg) : undefined,
         });
       }
       out.push({
