@@ -1,4 +1,4 @@
-import type { CompiledSpec, RuntimeState, Value } from "../types"
+import type { CompiledSpec, RuntimeState, TraceStep, Value } from "../types"
 
 export function createInitialState(spec: CompiledSpec): RuntimeState {
   const sessions = []
@@ -29,7 +29,7 @@ export function createInitialState(spec: CompiledSpec): RuntimeState {
     controlStates,
     freshSeq: 0,
     last: { event: null, session: null, transitioned: false, args: {} },
-    trace: [],
+    traceTail: null,
   }
 }
 
@@ -37,8 +37,8 @@ export function cloneRuntimeState(state: RuntimeState): RuntimeState {
   return {
     step: state.step,
     now: state.now,
-    sessions: state.sessions.map((session) => cloneStore(session)),
-    globals: cloneStore(state.globals),
+    sessions: [...state.sessions],
+    globals: { ...state.globals },
     controlStates: [...state.controlStates],
     freshSeq: state.freshSeq,
     last: {
@@ -47,8 +47,15 @@ export function cloneRuntimeState(state: RuntimeState): RuntimeState {
       transitioned: state.last.transitioned,
       args: { ...state.last.args },
     },
-    trace: [...state.trace],
+    traceTail: state.traceTail,
   }
+}
+
+export function materializeTrace(state: RuntimeState): TraceStep[] {
+  const out: TraceStep[] = []
+  for (let node = state.traceTail; node; node = node.prev) out.push(node)
+  out.reverse()
+  return out
 }
 
 export function stableStateKey(state: RuntimeState): string {

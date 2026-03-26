@@ -1,6 +1,6 @@
 import type { CompiledSpec, ModelCheckResult } from "../types"
 import { evalExpr, truthy } from "./expr"
-import { createInitialState, stableStateKey } from "./state"
+import { createInitialState, materializeTrace, stableStateKey } from "./state"
 import { generateNextStates } from "./transition"
 
 type ModelCheckProgress = {
@@ -28,20 +28,23 @@ type ModelCheckOptions = {
  */
 export function modelCheck(spec: CompiledSpec, options: ModelCheckOptions = {}): ModelCheckResult {
   const init = createInitialState(spec)
-  const queue = [init]
+  const queue: Array<typeof init | undefined> = [init]
+  let queueIndex = 0
 
   const seen = new Set<string>()
   let explored = 0
   options.onProgress?.({ phase: "start", explored, queueSize: queue.length, step: init.step })
 
-  while (queue.length) {
-    const current = queue.shift()!
+  while (queueIndex < queue.length) {
+    const current = queue[queueIndex]!
+    queue[queueIndex] = undefined
+    queueIndex += 1
     const key = stableStateKey(current)
 
     if (seen.has(key)) continue
     seen.add(key)
     explored += 1
-    options.onProgress?.({ phase: "explore", explored, queueSize: queue.length, step: current.step })
+    options.onProgress?.({ phase: "explore", explored, queueSize: queue.length - queueIndex, step: current.step })
 
     for (const invariant of spec.properties.invariants) {
       const ok = truthy(evalExpr(invariant.expr, current, current.last.session ?? 0))
@@ -49,7 +52,7 @@ export function modelCheck(spec: CompiledSpec, options: ModelCheckOptions = {}):
         options.onProgress?.({
           phase: "invariant-failed",
           explored,
-          queueSize: queue.length,
+          queueSize: queue.length - queueIndex,
           step: current.step,
           invariant: invariant.name,
         })
@@ -57,7 +60,7 @@ export function modelCheck(spec: CompiledSpec, options: ModelCheckOptions = {}):
           ok: false,
           explored,
           invariant: invariant.name,
-          trace: current.trace,
+          trace: materializeTrace(current),
         }
       }
     }
@@ -68,6 +71,6 @@ export function modelCheck(spec: CompiledSpec, options: ModelCheckOptions = {}):
     for (const nextState of nextStates) queue.push(nextState)
   }
 
-  options.onProgress?.({ phase: "done", explored, queueSize: queue.length, step: spec.env.maxSteps })
+  options.onProgress?.({ phase: "done", explored, queueSize: queue.length - queueIndex, step: spec.env.maxSteps })
   return { ok: true, explored }
 }

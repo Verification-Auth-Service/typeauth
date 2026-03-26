@@ -81,6 +81,10 @@ export type TraceStep = {
   transitioned: boolean
 }
 
+export type TraceLink = TraceStep & {
+  prev: TraceLink | null
+}
+
 // 探索時の完全状態。
 // 将来的に明示キュー/配送キューを導入する場合も、この型に拡張フィールドを足していく想定。
 export type RuntimeState = {
@@ -91,7 +95,7 @@ export type RuntimeState = {
   controlStates: string[]
   freshSeq: number
   last: LastTransition
-  trace: TraceStep[]
+  traceTail: TraceLink | null
 }
 
 // 最小モデルチェッカの結果。
